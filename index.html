@@ -774,6 +774,11 @@ input[readonly]{background:var(--gray-50);color:var(--gray-600)}
           <button class="btn" onclick="syncFromSheet()">⬇ Pull from Sheet</button>
           <button class="btn" onclick="syncToSheet()">⬆ Push all to Sheet</button>
         </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:12px;color:var(--gray-700)">
+          <input type="checkbox" id="autosync-toggle" onchange="toggleAutoSync(this)">
+          Auto-sync to Sheet after every add/edit
+        </label>
+        <p style="font-size:11px;color:var(--gray-400);margin-top:4px">You'll still need to click "Connect Google Account" once each time you open the app — browsers block sign-in popups that aren't triggered by a click. After that, every change pushes automatically for the rest of the session.</p>
         <div id="sheets-status" style="margin-top:12px;font-size:13px;color:var(--gray-400)"></div>
       </div>
       <div class="card">
@@ -1200,6 +1205,7 @@ function initApp() {
     const si = document.getElementById('gs-spreadsheet-id');
     if(ci) ci.value = localStorage.getItem('as_gs_client_id') || '';
     if(si) si.value = localStorage.getItem('as_gs_spreadsheet_id') || '';
+    initAutoSyncUI();
   } catch(e) { console.warn('sheets init', e); }
   try {
     const ds = getDS();
@@ -2065,6 +2071,51 @@ function ensureConnected() {
   return true;
 }
 
+// ── AUTO-SYNC ──────────────────────────────────────────────────────
+let autoSyncTimer = null;
+function toggleAutoSync(cb) {
+  localStorage.setItem('as_autosync', cb.checked ? 'true' : 'false');
+  if(cb.checked) {
+    setSheetStatus('Auto-sync enabled — every add/edit will push to the Sheet a couple seconds after you make it.');
+    if(!gsAccessToken) attemptSilentReconnect();
+  } else {
+    setSheetStatus('Auto-sync disabled.');
+  }
+}
+function scheduleAutoSync() {
+  if(localStorage.getItem('as_autosync') !== 'true') return;
+  const ssId = document.getElementById('gs-spreadsheet-id')?.value?.trim();
+  if(!ssId) return;
+  if(!gsAccessToken) { setSheetStatus('⚠ Auto-sync is on but not connected this session — click Connect Google Account.'); return; }
+  clearTimeout(autoSyncTimer);
+  autoSyncTimer = setTimeout(() => { syncToSheet(); }, 2500);
+}
+function attemptSilentReconnect() {
+  if(localStorage.getItem('as_autosync') !== 'true') return;
+  const clientId = document.getElementById('gs-client-id')?.value?.trim();
+  if(!clientId || typeof google === 'undefined' || !google.accounts) return;
+  try {
+    gsTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/spreadsheets',
+      callback: (resp) => {
+        if(resp.error) { setSheetStatus('Auto-sync is on — click "Connect Google Account" once to resume this session.'); return; }
+        gsAccessToken = resp.access_token;
+        setSheetStatus('✓ Auto-sync reconnected for this session.');
+      },
+    });
+    // 'prompt: ""' skips the account chooser if this browser already granted consent recently.
+    // Some browsers still block this because it isn't a direct click — if so, the callback above
+    // guides the user to click Connect once, which then keeps auto-sync running for the session.
+    gsTokenClient.requestAccessToken({ prompt: '' });
+  } catch(e) { /* silently fall back to manual connect */ }
+}
+function initAutoSyncUI() {
+  const cb = document.getElementById('autosync-toggle');
+  if(cb) cb.checked = localStorage.getItem('as_autosync') === 'true';
+  if(cb && cb.checked) setTimeout(attemptSilentReconnect, 600);
+}
+
 async function sheetsFetch(path, opts = {}) {
   const res = await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + path, {
     ...opts,
@@ -2181,6 +2232,7 @@ function saveProgress() {
       sheetsUrl:  appState.sheetsUrl,
     }));
   } catch(e) {}
+  scheduleAutoSync();
 }
 function loadProgress() {
   try {
