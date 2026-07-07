@@ -438,9 +438,9 @@ input[readonly]{background:var(--gray-50);color:var(--gray-600)}
       </div>
     </div>
     <div class="login-hero-cards">
-      <div class="login-hero-card" style="transform:rotate(-4deg)">🎀</div>
-      <div class="login-hero-card" style="transform:translateY(18px)">🚚</div>
-      <div class="login-hero-card" style="transform:rotate(4deg)">🧸</div>
+      <div class="login-hero-card" id="login-hero-card-0" style="transform:rotate(-4deg)">🎀</div>
+      <div class="login-hero-card" id="login-hero-card-1" style="transform:translateY(18px)">🚚</div>
+      <div class="login-hero-card" id="login-hero-card-2" style="transform:rotate(4deg)">🧸</div>
     </div>
   </div>
   <div class="login-form-panel">
@@ -804,25 +804,58 @@ input[readonly]{background:var(--gray-50);color:var(--gray-600)}
 
             <div id="te-panel-frames" class="cdw-panel-content">
               <div class="cdw-panel-title">Template frames</div>
-              <p style="font-size:11px;color:var(--ds-muted);margin-bottom:12px">Upload a PNG per category. Used automatically for all products of that category.</p>
-              <div class="tmpl-slots" id="settings-slots" style="display:flex;flex-direction:column;gap:8px">
-                <div class="tmpl-slot active" id="slot-girls" onclick="selectSlot('girls')" style="display:flex;align-items:center;gap:10px;text-align:left">
-                  <div class="tmpl-slot-thumb" id="thumb-girls" style="width:44px;height:44px;flex:0 0 auto"><span style="font-size:20px">👧</span></div>
-                  <div style="flex:1"><div class="tmpl-slot-label">Girls</div></div>
-                  <input type="file" accept="image/png" style="display:none" id="slot-input-girls" onchange="handleSlotUpload('girls',event)">
-                  <button class="btn" style="padding:4px 8px;font-size:11px" onclick="event.stopPropagation();document.getElementById('slot-input-girls').click()">Upload</button>
+              <p style="font-size:11px;color:var(--ds-muted);margin-bottom:12px">Upload a Square and a Story frame per category. Each format keeps its own independent design — your product photo carries over automatically.</p>
+              <div class="tmpl-slots" id="settings-slots" style="display:flex;flex-direction:column;gap:14px">
+                <div class="tmpl-slot active" id="slot-girls" onclick="selectSlot('girls')" style="text-align:left;padding:10px;border-radius:12px">
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                    <div class="tmpl-slot-thumb" id="thumb-girls" style="width:40px;height:40px;flex:0 0 auto"><span style="font-size:18px">👧</span></div>
+                    <div class="tmpl-slot-label">Girls</div>
+                  </div>
+                  <div style="display:flex;gap:8px">
+                    <div style="flex:1;display:flex;align-items:center;gap:6px">
+                      <input type="file" accept="image/png" style="display:none" id="slot-input-girls" onchange="handleSlotUpload('girls',event,'square')">
+                      <button class="btn" style="padding:3px 8px;font-size:10.5px;flex:1" onclick="event.stopPropagation();document.getElementById('slot-input-girls').click()">▢ Square</button>
+                    </div>
+                    <div style="flex:1;display:flex;align-items:center;gap:6px">
+                      <div class="tmpl-slot-thumb" id="thumb-story-girls" style="width:28px;height:40px;flex:0 0 auto;background:#F6F6F6;border-radius:6px"></div>
+                      <input type="file" accept="image/png" style="display:none" id="slot-input-story-girls" onchange="handleSlotUpload('girls',event,'story')">
+                      <button class="btn" style="padding:3px 8px;font-size:10.5px;flex:1" onclick="event.stopPropagation();document.getElementById('slot-input-story-girls').click()">▯ Story</button>
+                    </div>
+                  </div>
                 </div>
-                <div class="tmpl-slot" id="slot-boys" onclick="selectSlot('boys')" style="display:flex;align-items:center;gap:10px;text-align:left">
-                  <div class="tmpl-slot-thumb" id="thumb-boys" style="width:44px;height:44px;flex:0 0 auto"><span style="font-size:20px">👦</span></div>
-                  <div style="flex:1"><div class="tmpl-slot-label">Boys</div></div>
-                  <input type="file" accept="image/png" style="display:none" id="slot-input-boys" onchange="handleSlotUpload('boys',event)">
-                  <button class="btn" style="padding:4px 8px;font-size:11px" onclick="event.stopPropagation();document.getElementById('slot-input-boys').click()">Upload</button>
+                <div class="tmpl-slot" id="slot-boys" onclick="selectSlot('boys')" style="text-align:left;padding:10px;border-radius:12px">
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                    <div class="tmpl-slot-thumb" id="thumb-boys" style="width:40px;height:40px;flex:0 0 auto"><span style="font-size:18px">👦</span></div>
+                    <div class="tmpl-slot-label">Boys</div>
+                  </div>
+                  <div style="display:flex;gap:8px">
+                    <div style="flex:1;display:flex;align-items:center;gap:6px">
+                      <input type="file" accept="image/png" style="display:none" id="slot-input-boys" onchange="handleSlotUpload('boys',event,'square')">
+                      <button class="btn" style="padding:3px 8px;font-size:10.5px;flex:1" onclick="event.stopPropagation();document.getElementById('slot-input-boys').click()">▢ Square</button>
+                    </div>
+                    <div style="flex:1;display:flex;align-items:center;gap:6px">
+                      <div class="tmpl-slot-thumb" id="thumb-story-boys" style="width:28px;height:40px;flex:0 0 auto;background:#F6F6F6;border-radius:6px"></div>
+                      <input type="file" accept="image/png" style="display:none" id="slot-input-story-boys" onchange="handleSlotUpload('boys',event,'story')">
+                      <button class="btn" style="padding:3px 8px;font-size:10.5px;flex:1" onclick="event.stopPropagation();document.getElementById('slot-input-story-boys').click()">▯ Story</button>
+                    </div>
+                  </div>
                 </div>
-                <div class="tmpl-slot" id="slot-neutral" onclick="selectSlot('neutral')" style="display:flex;align-items:center;gap:10px;text-align:left">
-                  <div class="tmpl-slot-thumb" id="thumb-neutral" style="width:44px;height:44px;flex:0 0 auto"><span style="font-size:20px">✨</span></div>
-                  <div style="flex:1"><div class="tmpl-slot-label">Neutral</div></div>
-                  <input type="file" accept="image/png" style="display:none" id="slot-input-neutral" onchange="handleSlotUpload('neutral',event)">
-                  <button class="btn" style="padding:4px 8px;font-size:11px" onclick="event.stopPropagation();document.getElementById('slot-input-neutral').click()">Upload</button>
+                <div class="tmpl-slot" id="slot-neutral" onclick="selectSlot('neutral')" style="text-align:left;padding:10px;border-radius:12px">
+                  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                    <div class="tmpl-slot-thumb" id="thumb-neutral" style="width:40px;height:40px;flex:0 0 auto"><span style="font-size:18px">✨</span></div>
+                    <div class="tmpl-slot-label">Neutral</div>
+                  </div>
+                  <div style="display:flex;gap:8px">
+                    <div style="flex:1;display:flex;align-items:center;gap:6px">
+                      <input type="file" accept="image/png" style="display:none" id="slot-input-neutral" onchange="handleSlotUpload('neutral',event,'square')">
+                      <button class="btn" style="padding:3px 8px;font-size:10.5px;flex:1" onclick="event.stopPropagation();document.getElementById('slot-input-neutral').click()">▢ Square</button>
+                    </div>
+                    <div style="flex:1;display:flex;align-items:center;gap:6px">
+                      <div class="tmpl-slot-thumb" id="thumb-story-neutral" style="width:28px;height:40px;flex:0 0 auto;background:#F6F6F6;border-radius:6px"></div>
+                      <input type="file" accept="image/png" style="display:none" id="slot-input-story-neutral" onchange="handleSlotUpload('neutral',event,'story')">
+                      <button class="btn" style="padding:3px 8px;font-size:10.5px;flex:1" onclick="event.stopPropagation();document.getElementById('slot-input-story-neutral').click()">▯ Story</button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -884,6 +917,13 @@ input[readonly]{background:var(--gray-50);color:var(--gray-600)}
               </div>
               <label style="font-size:11px;color:var(--ds-muted);display:block;margin-bottom:6px">Accent colour</label>
               <input type="color" id="brand-accent" value="#D4A0B8" style="width:44px;height:36px;border:none;cursor:pointer;border-radius:8px;margin-bottom:14px" oninput="applyBranding();saveBranding()">
+              <div style="border-top:1px solid #F0F0F0;padding-top:14px;margin-bottom:14px">
+                <label style="font-size:11px;color:var(--ds-muted);display:block;margin-bottom:6px">Login page images (left panel, up to 3)</label>
+                <div id="login-image-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:8px"></div>
+                <input type="file" id="login-image-input" accept="image/*" style="display:none" onchange="handleLoginImageUpload(event)">
+                <button class="btn" style="width:100%" onclick="document.getElementById('login-image-input').click()">Upload image</button>
+                <p style="font-size:10px;color:#C4C4C4;margin-top:4px">Falls back to default icons for any slot left empty.</p>
+              </div>
               <button class="btn" style="width:100%" onclick="resetBranding()">Reset to default</button>
             </div>
 
@@ -891,18 +931,22 @@ input[readonly]{background:var(--gray-50);color:var(--gray-600)}
               <div class="cdw-panel-title">Template collections</div>
               <p style="font-size:11px;color:var(--ds-muted);margin-bottom:10px">Each template stores its own frames, font and layout. Switch instantly.</p>
               <select id="tpl-select" class="ds-input" style="margin-bottom:8px" onchange="switchTemplate(this.value)"></select>
-              <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+              <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
                 <button class="btn" onclick="createTemplate()">+ New template</button>
                 <button class="btn" onclick="duplicateTemplate()">⧉ Duplicate</button>
                 <button class="btn" onclick="renameTemplate()">✎ Rename</button>
                 <button class="btn" onclick="setDefaultTemplate()">★ Set default</button>
                 <button class="btn" style="color:#C62828;border-color:#C62828" onclick="deleteTemplate()">🗑 Delete</button>
               </div>
-              <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
                 <button class="btn btn-accent" onclick="pushTemplatesToSheet()">⬆ Save all to Sheet</button>
                 <button class="btn" onclick="pullTemplatesFromSheet()">⬇ Load from Sheet</button>
               </div>
-              <div id="tpl-status" style="font-size:10.5px;color:var(--ds-muted);margin-top:8px"></div>
+              <div id="tpl-status" style="font-size:10.5px;color:var(--ds-muted);margin-bottom:10px"></div>
+              <div style="border-top:1px solid #F0F0F0;padding-top:10px">
+                <div class="cdw-panel-title" style="font-size:10px">Your saved templates</div>
+                <div id="tpl-list" style="display:flex;flex-direction:column;gap:2px"></div>
+              </div>
             </div>
 
           </div>
@@ -1101,17 +1145,61 @@ function updateLogoPreviews() {
   if(loginBadge) loginBadge.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:18px">` : '🧸';
 }
 function resetLogo() { appState.brandLogo = null; updateLogoPreviews(); }
+
+// ── LOGIN PAGE CUSTOM IMAGERY (up to 3 images, left hero panel) ──────
+function getLoginImages() { return appState.brandLoginImages || [null, null, null]; }
+function handleLoginImageUpload(ev) {
+  const file = ev.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    if(!appState.brandLoginImages) appState.brandLoginImages = [null, null, null];
+    const slot = appState.brandLoginImages.findIndex(v => !v);
+    appState.brandLoginImages[slot === -1 ? 0 : slot] = e.target.result;
+    renderLoginImageGrid();
+    updateLoginHeroCards();
+    saveBranding();
+  };
+  reader.readAsDataURL(file);
+  ev.target.value = '';
+}
+function removeLoginImage(i) {
+  if(!appState.brandLoginImages) return;
+  appState.brandLoginImages[i] = null;
+  renderLoginImageGrid();
+  updateLoginHeroCards();
+  saveBranding();
+}
+function renderLoginImageGrid() {
+  const grid = document.getElementById('login-image-grid'); if(!grid) return;
+  const imgs = getLoginImages();
+  grid.innerHTML = imgs.map((src, i) => src
+    ? `<div style="position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:#F6F6F6"><img src="${src}" style="width:100%;height:100%;object-fit:cover"><div onclick="removeLoginImage(${i})" style="position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:999px;background:rgba(0,0,0,0.6);color:#fff;font-size:9px;display:flex;align-items:center;justify-content:center;cursor:pointer">✕</div></div>`
+    : `<div style="aspect-ratio:1;border-radius:8px;background:#F6F6F6;display:flex;align-items:center;justify-content:center;font-size:16px;color:#CCC">+</div>`
+  ).join('');
+}
+function updateLoginHeroCards() {
+  const imgs = getLoginImages();
+  const fallback = ['🎀','🚚','🧸'];
+  imgs.forEach((src, i) => {
+    const el = document.getElementById('login-hero-card-' + i);
+    if(!el) return;
+    el.innerHTML = src ? `<img src="${src}" style="width:100%;height:100%;object-fit:cover;border-radius:20px">` : fallback[i];
+  });
+}
 function saveBranding() {
   const accent = document.getElementById('brand-accent')?.value || '#D4A0B8';
-  localStorage.setItem(BRANDING_KEY, JSON.stringify({ accent, logo: appState.brandLogo || null }));
+  localStorage.setItem(BRANDING_KEY, JSON.stringify({ accent, logo: appState.brandLogo || null, loginImages: appState.brandLoginImages || [null,null,null] }));
 }
 function resetBranding() {
   localStorage.removeItem(BRANDING_KEY);
   appState.brandLogo = null;
+  appState.brandLoginImages = [null, null, null];
   document.documentElement.style.removeProperty('--accent');
   document.documentElement.style.removeProperty('--accent-dk');
   const acc = document.getElementById('brand-accent'); if(acc) acc.value = '#D4A0B8';
   updateLogoPreviews();
+  renderLoginImageGrid();
+  updateLoginHeroCards();
   showToast('Branding reset');
 }
 // ── MANAGED CATEGORIES: Brand / Toy Type / Tags (editable from Inventory) ──
@@ -1211,15 +1299,26 @@ function loadBrandingUI() {
   const b = getBranding();
   const acc = document.getElementById('brand-accent'); if(acc) acc.value = b.accent || '#D4A0B8';
   appState.brandLogo = b.logo || null;
+  appState.brandLoginImages = b.loginImages || [null, null, null];
   applyBranding();
   updateLogoPreviews();
+  renderLoginImageGrid();
+  updateLoginHeroCards();
 }
-function getDS() {
-  try { return JSON.parse(localStorage.getItem(DS_KEY) || '{}'); } catch(e) { return {}; }
+function defaultCatSettings() {
+  return { font: 'system-ui', fontSize: 80, color: '#FFFFFF', strokeColor: '#000000', strokeWidth: 3, textX: 1000, textY: 1850, zoom: 100 };
+}
+function getDS(cat) {
+  cat = cat || (appState.activeSlot === 'blank' ? 'girls' : appState.activeSlot) || 'girls';
+  try {
+    const all = JSON.parse(localStorage.getItem(DS_KEY) || '{}');
+    return { ...defaultCatSettings(), ...(all[cat] || {}) };
+  } catch(e) { return defaultCatSettings(); }
 }
 function saveDesignSettings() {
+  const cat = (appState.activeSlot === 'blank' ? 'girls' : appState.activeSlot) || 'girls';
   const v = id => document.getElementById(id);
-  const ds = {
+  const catSettings = {
     font:        v('ds-font')        ? v('ds-font').value        : 'system-ui',
     fontSize:    v('ds-fontSize')    ? parseInt(v('ds-fontSize').value) || 80   : 80,
     color:       v('ds-color')       ? v('ds-color').value       : '#FFFFFF',
@@ -1228,15 +1327,14 @@ function saveDesignSettings() {
     textX:       v('ds-textX')       ? parseInt(v('ds-textX').value)   || 1000 : 1000,
     textY:       v('ds-textY')       ? parseInt(v('ds-textY').value)   || 1850 : 1850,
     zoom:        v('ds-zoom')        ? parseInt(v('ds-zoom').value)    || 100  : 100,
-    customFonts: customFonts,
   };
-  localStorage.setItem(DS_KEY, JSON.stringify(ds));
+  let all = {};
+  try { all = JSON.parse(localStorage.getItem(DS_KEY) || '{}'); } catch(e) {}
+  all[cat] = catSettings;
+  all.customFonts = customFonts;
+  localStorage.setItem(DS_KEY, JSON.stringify(all));
   const sv = document.getElementById('ds-save-status');
-  if(sv) sv.textContent = '✓ Saved ' + new Date().toLocaleTimeString();
-  const cv = document.getElementById('ds-color-val');
-  const stv = document.getElementById('ds-stroke-val');
-  if(cv) cv.textContent = ds.color;
-  if(stv) stv.textContent = ds.strokeColor;
+  if(sv) sv.textContent = '✓ Saved (' + cat.charAt(0).toUpperCase() + cat.slice(1) + ') ' + new Date().toLocaleTimeString();
   renderSettingsPreview();
   saveActiveTemplateSnapshot();
 }
@@ -1251,8 +1349,10 @@ function loadDesignSettingsUI() {
   set('ds-textX',       ds.textX       || 1000);
   set('ds-textY',       ds.textY       || 1850);
   set('ds-zoom',        ds.zoom        || 100);
-  if(ds.customFonts) {
-    ds.customFonts.forEach(cf => {
+  let all = {};
+  try { all = JSON.parse(localStorage.getItem(DS_KEY) || '{}'); } catch(e) {}
+  if(all.customFonts) {
+    all.customFonts.forEach(cf => {
       if(!customFonts.find(f => f.family === cf.family)) {
         if(cf.dataUrl) { try { registerCustomFont(cf.name, cf.family, dataUrlToArrayBuffer(cf.dataUrl), false); } catch(e) {} }
         else customFonts.push(cf);
@@ -1290,32 +1390,51 @@ function setActiveTemplateId(id) { localStorage.setItem('as_active_template_id',
 function slugify(name) { return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + Date.now(); }
 
 function blankTemplate(name) {
-  return { id: slugify(name), name, isDefault: false, font: 'system-ui', fontSize: 80, color: '#FFFFFF',
-    strokeColor: '#000000', strokeWidth: 3, textX: 1000, textY: 1850, zoom: 100, customFonts: [],
-    frames: { girls: null, boys: null, neutral: null } };
+  const cs = defaultCatSettings();
+  return { id: slugify(name), name, isDefault: false,
+    categories: { girls: { ...cs }, boys: { ...cs }, neutral: { ...cs } },
+    customFonts: [],
+    frames: { girls: null, boys: null, neutral: null },
+    framesStory: { girls: null, boys: null, neutral: null } };
+}
+
+// Upgrades templates saved before per-category settings / Story frames existed, so old data keeps working.
+function migrateTemplateShape(tpl) {
+  if(!tpl.categories) {
+    const cs = { font: tpl.font || 'system-ui', fontSize: tpl.fontSize || 80, color: tpl.color || '#FFFFFF',
+      strokeColor: tpl.strokeColor || '#000000', strokeWidth: tpl.strokeWidth !== undefined ? tpl.strokeWidth : 3,
+      textX: tpl.textX || 1000, textY: tpl.textY || 1850, zoom: tpl.zoom || 100 };
+    tpl.categories = { girls: { ...cs }, boys: { ...cs }, neutral: { ...cs } };
+  }
+  if(!tpl.framesStory) tpl.framesStory = { girls: null, boys: null, neutral: null };
+  return tpl;
 }
 
 function ensureTemplateLibrary() {
-  let list = getTemplateLibrary();
+  let list = getTemplateLibrary().map(migrateTemplateShape);
   if(!list.length) {
     const def = blankTemplate('Default');
     def.isDefault = true;
     list = [def];
     saveTemplateLibrary(list);
     setActiveTemplateId(def.id);
+  } else {
+    saveTemplateLibrary(list); // persist the migration
   }
   if(!getActiveTemplateId() || !list.find(t => t.id === getActiveTemplateId())) setActiveTemplateId(list[0].id);
   return list;
 }
 
 function captureCurrentTemplateState() {
-  const ds = getDS();
+  let all = {};
+  try { all = JSON.parse(localStorage.getItem(DS_KEY) || '{}'); } catch(e) {}
+  const categories = {};
+  ['girls','boys','neutral'].forEach(cat => { categories[cat] = { ...defaultCatSettings(), ...(all[cat] || {}) }; });
   return {
-    font: ds.font || 'system-ui', fontSize: ds.fontSize || 80, color: ds.color || '#FFFFFF',
-    strokeColor: ds.strokeColor || '#000000', strokeWidth: ds.strokeWidth !== undefined ? ds.strokeWidth : 3,
-    textX: ds.textX || 1000, textY: ds.textY || 1850, zoom: ds.zoom || 100,
+    categories,
     customFonts: customFonts,
-    frames: { girls: appState.frameData.girls, boys: appState.frameData.boys, neutral: appState.frameData.neutral },
+    frames:      { girls: appState.frameData.girls,      boys: appState.frameData.boys,      neutral: appState.frameData.neutral },
+    framesStory: { girls: appState.frameDataStory.girls, boys: appState.frameDataStory.boys, neutral: appState.frameDataStory.neutral },
   };
 }
 
@@ -1329,7 +1448,10 @@ function saveActiveTemplateSnapshot() {
 }
 
 function applyTemplateToUI(tpl) {
+  migrateTemplateShape(tpl);
   ['girls','boys','neutral'].forEach(cat => {
+    const emoji = cat === 'girls' ? '👧' : cat === 'boys' ? '👦' : '✨';
+    // Square frame
     const durl = tpl.frames && tpl.frames[cat];
     appState.frameData[cat] = durl || null;
     const thumb = document.getElementById('thumb-' + cat);
@@ -1340,14 +1462,26 @@ function applyTemplateToUI(tpl) {
       if(thumb) { const p = new Image(); p.src = durl; p.style.cssText = 'width:100%;height:100%;object-fit:cover'; thumb.innerHTML = ''; thumb.appendChild(p); }
     } else {
       appState.templates[cat] = null;
-      if(thumb) thumb.innerHTML = `<span style="font-size:32px">${cat==='girls'?'👧':cat==='boys'?'👦':'🌟'}</span>`;
+      if(thumb) thumb.innerHTML = `<span style="font-size:32px">${emoji}</span>`;
+    }
+    // Story frame
+    const sdurl = tpl.framesStory && tpl.framesStory[cat];
+    appState.frameDataStory[cat] = sdurl || null;
+    const sthumb = document.getElementById('thumb-story-' + cat);
+    if(sdurl) {
+      const simg = new Image();
+      simg.onload = () => { appState.templatesStory[cat] = simg; renderPreview(); };
+      simg.src = sdurl;
+      if(sthumb) { const p = new Image(); p.src = sdurl; p.style.cssText = 'width:100%;height:100%;object-fit:cover'; sthumb.innerHTML = ''; sthumb.appendChild(p); }
+    } else {
+      appState.templatesStory[cat] = null;
+      if(sthumb) sthumb.innerHTML = `<span style="font-size:20px">${emoji}</span>`;
     }
   });
-  localStorage.setItem(DS_KEY, JSON.stringify({
-    font: tpl.font || 'system-ui', fontSize: tpl.fontSize || 80, color: tpl.color || '#FFFFFF',
-    strokeColor: tpl.strokeColor || '#000000', strokeWidth: tpl.strokeWidth !== undefined ? tpl.strokeWidth : 3,
-    textX: tpl.textX || 1000, textY: tpl.textY || 1850, zoom: tpl.zoom || 100, customFonts: tpl.customFonts || [],
-  }));
+  const dsObj = {};
+  ['girls','boys','neutral'].forEach(cat => { dsObj[cat] = { ...defaultCatSettings(), ...((tpl.categories || {})[cat] || {}) }; });
+  dsObj.customFonts = tpl.customFonts || [];
+  localStorage.setItem(DS_KEY, JSON.stringify(dsObj));
   customFonts.length = 0;
   (tpl.customFonts || []).forEach(cf => {
     if(cf.dataUrl) { try { registerCustomFont(cf.name, cf.family, dataUrlToArrayBuffer(cf.dataUrl), false); } catch(e) {} }
@@ -1364,6 +1498,12 @@ function refreshTemplateSelects() {
   const activeId = getActiveTemplateId();
   const opts = list.map(t => `<option value="${t.id}"${t.id === activeId ? ' selected' : ''}>${escHtml(t.name)}${t.isDefault ? ' ★' : ''}</option>`).join('');
   ['tpl-select','create-tpl-select'].forEach(sid => { const el = document.getElementById(sid); if(el) el.innerHTML = opts || '<option value="">No templates yet</option>'; });
+  const listEl = document.getElementById('tpl-list');
+  if(listEl) listEl.innerHTML = list.map(t => `
+    <div onclick="switchTemplate('${t.id}');refreshTemplateSelects()" style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:8px;cursor:pointer;background:${t.id===activeId?'#F1E9FB':'transparent'};font-size:12.5px">
+      <span style="font-weight:${t.id===activeId?'700':'500'};color:${t.id===activeId?'#6A3FBF':'#5A5A5A'}">${escHtml(t.name)}${t.isDefault?' ★':''}</span>
+      ${t.id===activeId ? '<span style="font-size:10px;color:#9B7BD9">ACTIVE</span>' : ''}
+    </div>`).join('') || '<p style="font-size:11px;color:var(--ds-muted)">No templates yet.</p>';
 }
 
 function initTemplates() {
@@ -1438,6 +1578,8 @@ let appState = {
   boxes:      [],
   templates:  { girls: null, boys: null, neutral: null },
   frameData:  { girls: null, boys: null, neutral: null },
+  templatesStory: { girls: null, boys: null, neutral: null },
+  frameDataStory: { girls: null, boys: null, neutral: null },
   blankPhotos: [],
   brandLogo: null,
   dashPeriod: 'week',
@@ -1810,11 +1952,28 @@ function selectSlot(cat) {
   if(warn) warn.style.display = (cat !== 'blank' && !appState.templates[cat]) ? 'block' : 'none';
   const nm = document.getElementById('active-slot-name');
   if(nm) nm.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+  loadDesignSettingsUI(); // reflect this category's own font/colour/stroke/position in the Text panel
+  refreshLayerStylesForActiveCategory(); // any layer still following the template default adopts this category's look
   renderPreview();
   renderSettingsPreview();
   updateCreateMode();
 }
 function quickSelectSlot(cat) { selectSlot(cat); }
+
+// When switching frame category, any text layer that hasn't been manually customised (linked !== false)
+// adopts that category's own font/colour/stroke/position — each frame keeps its own independent look.
+function refreshLayerStylesForActiveCategory() {
+  if(appState.activeSlot === 'blank') return;
+  const ds = getDS();
+  appState.textOverlays.forEach(o => {
+    if(o.type === 'image') return;
+    if(o.id === 'ov-main' && o.linked !== false) {
+      o.font = ds.font; o.fontSize = ds.fontSize; o.color = ds.color;
+      o.strokeColor = ds.strokeColor; o.strokeWidth = ds.strokeWidth;
+      o.x = ds.textX; o.y = ds.textY;
+    }
+  });
+}
 
 function setCreateStep(step) {
   const design = document.getElementById('create-step-design');
@@ -1865,8 +2024,9 @@ function renderCdwPhotoGrid() {
 function addBadgeLayer(label, color) {
   pushUndoSnapshot();
   const id = 'badge-' + Date.now();
+  const ds = getDS();
   appState.textOverlays.push({
-    id, type: 'badge', text: label, x: 350, y: 1400, fontSize: 34, font: 'system-ui',
+    id, type: 'badge', text: label, x: 350, y: 1400, fontSize: 34, font: ds.font || 'system-ui',
     color: '#FFFFFF', strokeColor: '#000000', strokeWidth: 0, bold: true, align: 'center',
     opacity: 1, hidden: false, bg: true, bgColor: color, bgShape: 'circle',
   });
@@ -1991,7 +2151,8 @@ function updateCreateMode() {
   updateSaveButtonState();
 }
 
-function handleSlotUpload(cat, ev) {
+function handleSlotUpload(cat, ev, format) {
+  format = format || 'square';
   const file = ev.target.files[0]; if(!file) return;
   if(file.type !== 'image/png') { showToast('Please upload a PNG file'); return; }
   const reader = new FileReader();
@@ -1999,7 +2160,8 @@ function handleSlotUpload(cat, ev) {
     const rawDataUrl = e.target.result;
     const img = new Image();
     img.onload = () => {
-      const MAX_DIM = 2000; // matches the app's 2000×2000 export canvas — no quality loss, just no bloat beyond what's ever used
+      const dims = format === 'story' ? [1080, 1920] : [2000, 2000];
+      const MAX_DIM = Math.max(...dims);
       let dataUrl = rawDataUrl;
       if(img.width > MAX_DIM || img.height > MAX_DIM) {
         const scale = MAX_DIM / Math.max(img.width, img.height);
@@ -2011,14 +2173,21 @@ function handleSlotUpload(cat, ev) {
       }
       const finalImg = new Image();
       finalImg.onload = () => {
-        appState.templates[cat] = finalImg;
-        appState.frameData[cat] = dataUrl;
-        const thumb = document.getElementById('thumb-' + cat);
-        if(thumb) { const p = new Image(); p.src = dataUrl; p.style.cssText = 'width:100%;height:100%;object-fit:cover'; thumb.innerHTML = ''; thumb.appendChild(p); }
-        if(appState.activeSlot === cat) { const warn = document.getElementById('no-tmpl-warn'); if(warn) warn.style.display = 'none'; }
+        if(format === 'story') {
+          appState.templatesStory[cat] = finalImg;
+          appState.frameDataStory[cat] = dataUrl;
+          const sthumb = document.getElementById('thumb-story-' + cat);
+          if(sthumb) { const p = new Image(); p.src = dataUrl; p.style.cssText = 'width:100%;height:100%;object-fit:cover'; sthumb.innerHTML = ''; sthumb.appendChild(p); }
+        } else {
+          appState.templates[cat] = finalImg;
+          appState.frameData[cat] = dataUrl;
+          const thumb = document.getElementById('thumb-' + cat);
+          if(thumb) { const p = new Image(); p.src = dataUrl; p.style.cssText = 'width:100%;height:100%;object-fit:cover'; thumb.innerHTML = ''; thumb.appendChild(p); }
+          if(appState.activeSlot === cat) { const warn = document.getElementById('no-tmpl-warn'); if(warn) warn.style.display = 'none'; }
+        }
         renderPreview(); renderSettingsPreview();
         saveActiveTemplateSnapshot();
-        showToast(cat.charAt(0).toUpperCase() + cat.slice(1) + ' frame uploaded ✓' + (dataUrl !== rawDataUrl ? ' (resized to fit)' : ''));
+        showToast(cat.charAt(0).toUpperCase() + cat.slice(1) + ' ' + (format === 'story' ? 'Story' : 'Square') + ' frame uploaded ✓' + (dataUrl !== rawDataUrl ? ' (resized to fit)' : ''));
       };
       finalImg.src = dataUrl;
     };
@@ -2460,8 +2629,9 @@ function addTextLayer(kind) {
   const id = 'ov-' + (kind === 'price' ? 'price' : 'custom-' + Date.now());
   if(kind === 'price' && appState.textOverlays.find(o => o.id === 'ov-price')) { showToast('Price layer already added'); return; }
   const price = document.getElementById('price')?.value || '0';
+  const ds = getDS();
   const base = { id, x: 1000, y: kind === 'price' ? 1650 : 1000, fontSize: kind === 'price' ? 60 : 70,
-    font: 'system-ui', color: '#FFFFFF', strokeColor: '#000000', strokeWidth: 3,
+    font: ds.font || 'system-ui', color: ds.color || '#FFFFFF', strokeColor: ds.strokeColor || '#000000', strokeWidth: ds.strokeWidth !== undefined ? ds.strokeWidth : 3,
     bold: true, align: 'center', opacity: 1, hidden: false, bg: false, linked: kind === 'price' };
   base.text = kind === 'price' ? ('K' + price) : 'New text';
   pushUndoSnapshot();
@@ -2798,9 +2968,14 @@ function generateFormatCanvas(format) {
   const out = document.createElement('canvas');
   out.width = w; out.height = h;
   const octx = out.getContext('2d');
-  if(format === 'square') { octx.drawImage(canvas, 0, 0, w, h); }
-  else {
-    // Non-square: blurred cover-fit backdrop (hides letterbox bars) + sharp contain-fit foreground
+  const storyFrame = appState.templatesStory[appState.activeSlot];
+  if(format === 'square') {
+    octx.drawImage(canvas, 0, 0, w, h);
+  } else if(storyFrame) {
+    // Independent Story design: its own frame art, product photo re-fit to the tall canvas, text repositioned proportionally.
+    renderIndependentFormatCanvas(octx, w, h, storyFrame);
+  } else {
+    // No Story frame uploaded yet for this category — fall back to a blurred letterbox of the Square composite.
     octx.save();
     try { octx.filter = 'blur(50px) brightness(0.85)'; } catch(e) {}
     const bgScale = Math.max(w / canvas.width, h / canvas.height) * 1.15;
@@ -2818,6 +2993,86 @@ function generateFormatCanvas(format) {
     octx.fillText('All Seazons', w - w*0.03, h - h*0.025);
   }
   return out;
+}
+// Composites the product photo + a format-specific frame + text layers (repositioned proportionally
+// from the 2000×2000 editing space) directly onto a canvas of its own dimensions — used for Story exports
+// once a Story frame has been uploaded for the active category, so Story gets its own real design.
+function renderIndependentFormatCanvas(octx, W, H, frameImg) {
+  const sx = W / 2000, sy = H / 2000, sAvg = (sx + sy) / 2;
+  if(currentImg) {
+    octx.save(); octx.beginPath(); octx.rect(0, 0, W, H); octx.clip();
+    octx.translate(W / 2, H / 2);
+    octx.rotate(imgRotation * Math.PI / 180);
+    const rotated = (imgRotation / 90) % 2 !== 0;
+    const natW = rotated ? currentImg.height : currentImg.width;
+    const natH = rotated ? currentImg.width  : currentImg.height;
+    const ar = natW / natH;
+    let dw, dh;
+    if(imgFitMode === 'fit') { if(ar > 1) { dw = W * imgZoom; dh = dw / ar; } else { dh = H * imgZoom; dw = dh * ar; } }
+    else                      { if(ar > 1) { dh = H * imgZoom; dw = dh * ar; } else { dw = W * imgZoom; dh = dw / ar; } }
+    octx.drawImage(currentImg, -dw / 2 + imgOffX * sx, -dh / 2 + imgOffY * sy, dw, dh);
+    octx.restore();
+  }
+  if(frameImg) octx.drawImage(frameImg, 0, 0, W, H);
+  const renderOrder = [...appState.textOverlays].sort((a, b) => {
+    const rank = o => (o.type === 'image' || o.type === 'badge') ? 0 : 1;
+    return rank(a) - rank(b);
+  });
+  renderOrder.forEach(o => {
+    if(o.hidden) return;
+    const rx = o.x * sx, ry = o.y * sy;
+    if(o.type === 'image') {
+      const img = layerImageCache[o.src];
+      if(img && img.complete && img.naturalWidth) {
+        octx.globalAlpha = o.opacity !== undefined ? o.opacity : 1;
+        octx.drawImage(img, rx - (o.w||200) * sAvg / 2, ry - (o.h||200) * sAvg / 2, (o.w||200) * sAvg, (o.h||200) * sAvg);
+        octx.globalAlpha = 1;
+      }
+      return;
+    }
+    const fs = (o.fontSize || 80) * sAvg;
+    const weight = o.bold === false ? '400' : '700';
+    const styleStr = o.italic ? 'italic' : 'normal';
+    octx.font = `${styleStr} ${weight} ${fs}px "${o.font || 'system-ui'}"`;
+    const align = o.align || 'center';
+    octx.textAlign = align === 'left' ? 'left' : align === 'right' ? 'right' : 'center';
+    octx.textBaseline = 'alphabetic';
+    octx.globalAlpha = o.opacity !== undefined ? o.opacity : 1;
+    const lines = String(o.text || '').split('\n');
+    const lineHeight = fs * 1.15;
+    const blockH = lineHeight * (lines.length - 1);
+    const maxW = Math.max(...lines.map(l => octx.measureText(l).width));
+    if(o.type === 'badge') {
+      const r = Math.max(maxW, fs * 2.2) / 2 + fs * 0.55;
+      octx.fillStyle = o.bgColor || '#B4503D';
+      octx.beginPath(); octx.arc(rx, ry - fs * 0.3, r, 0, Math.PI * 2); octx.fill();
+    } else if(o.bg) {
+      const padX = fs * 0.35, padY = fs * 0.28;
+      let bgX = rx - maxW/2 - padX;
+      if(align === 'left') bgX = rx - padX;
+      if(align === 'right') bgX = rx - maxW - padX;
+      octx.fillStyle = 'rgba(0,0,0,0.45)';
+      octx.beginPath();
+      roundRect(octx, bgX, ry - blockH/2 - fs*0.82 - padY, maxW + padX*2, blockH + fs*1.1 + padY*2, 12 * sAvg);
+      octx.fill();
+    }
+    lines.forEach((line, i) => {
+      const ly = ry + i * lineHeight - blockH / 2;
+      if((o.strokeWidth || 0) > 0) {
+        octx.lineWidth = o.strokeWidth * 2 * sAvg; octx.strokeStyle = o.strokeColor || '#000'; octx.lineJoin = 'round';
+        octx.strokeText(line, rx, ly);
+      }
+      octx.fillStyle = o.color || '#FFFFFF';
+      octx.fillText(line, rx, ly);
+      if(o.underline) {
+        const lw = octx.measureText(line).width;
+        let ux = rx - lw/2; if(align === 'left') ux = rx; if(align === 'right') ux = rx - lw;
+        octx.beginPath(); octx.moveTo(ux, ly + fs*0.08); octx.lineTo(ux + lw, ly + fs*0.08);
+        octx.strokeStyle = o.color || '#FFFFFF'; octx.lineWidth = Math.max(fs*0.03, 2); octx.stroke();
+      }
+    });
+    octx.globalAlpha = 1;
+  });
 }
 function getSelectedExportFormats() {
   return ['square','story'].filter(f => document.getElementById('exp-' + f)?.checked);
