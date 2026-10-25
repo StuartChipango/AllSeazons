@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>All Seazons Staff</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#1d1d1f">
+  <link rel="icon" href="../assets/img/icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="../assets/css/base.css">
+  <link rel="stylesheet" href="../assets/css/staff.css">
+</head>
+<body>
+  <section class="login" id="login" hidden>
+    <form class="login-card" id="loginForm">
+      <img src="../assets/img/logo.svg" alt="All Seazons" width="150" height="79">
+      <h1>Staff sign in</h1>
+      <label class="field"><span>Email</span><input type="email" name="email" autocomplete="username" required></label>
+      <label class="field"><span>Password</span><input type="password" name="password" autocomplete="current-password" required></label>
+      <p class="error-text" id="loginError" role="alert"></p>
+      <button class="btn block" type="submit">Sign in</button>
+      <p class="hint">Staff accounts are added by the owner in Settings.</p>
+    </form>
+  </section>
+
+  <div class="app" id="app" hidden>
+    <aside class="side">
+      <a class="side-logo" href="#home"><img src="../assets/img/logo.svg" alt="All Seazons" width="110" height="58"></a>
+      <nav class="nav" id="nav">
+        <a href="#home" data-nav="home"><span class="ico">⌂</span><span>Home</span></a>
+        <a href="#upload" data-nav="upload"><span class="ico">＋</span><span>Add toys</span></a>
+        <a href="#review" data-nav="review"><span class="ico">✓</span><span>Review</span><b class="badge" id="reviewBadge" hidden></b></a>
+        <a href="#orders" data-nav="orders"><span class="ico">✉</span><span>Orders</span><b class="badge" id="ordersBadge" hidden></b></a>
+        <a href="#stock" data-nav="stock"><span class="ico">▦</span><span>Stock</span></a>
+        <a href="#boxes" data-nav="boxes" class="more-only"><span class="ico">⧉</span><span>Boxes</span></a>
+        <a href="#settings" data-nav="settings" class="more-only"><span class="ico">⚙</span><span>Settings</span></a>
+      </nav>
+      <div class="side-foot">
+        <a href="../" target="_blank" rel="noopener">View shop ↗</a>
+        <button class="linkish" id="signOut">Sign out</button>
+      </div>
+    </aside>
+    <main class="main" id="main" tabindex="-1"></main>
+  </div>
+
+  <script type="module" src="../assets/js/staff/app.js"></script>
+</body>
+</html>

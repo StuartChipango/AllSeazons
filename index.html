@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>All Seazons Play · Pre-loved and new toys in Zambia</title>
+  <meta name="description" content="Quality pre-loved and new toys from K50. Shop online and order on WhatsApp. Pickup or Yango delivery in Lusaka, courier to towns across Zambia.">
+  <meta property="og:title" content="All Seazons Play">
+  <meta property="og:description" content="Pre-loved and new toys from K50. Order on WhatsApp.">
+  <meta property="og:image" content="assets/img/og.png">
+  <meta name="theme-color" content="#f2d3e3">
+  <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/base.css">
+  <link rel="stylesheet" href="assets/css/shop.css">
+</head>
+<body>
+  <div class="announce" id="announce" hidden></div>
+
+  <header class="top">
+    <a class="brand" href="./" aria-label="All Seazons Play home"><img src="assets/img/logo.svg" alt="All Seazons" width="120" height="63"></a>
+    <label class="search">
+      <span class="sr-only">Search toys</span>
+      <input type="search" id="search" placeholder="Search toys" autocomplete="off">
+    </label>
+    <button class="cart-btn" id="cartBtn" aria-label="Open cart">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M7 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm10 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM3 3h2l2.4 11.2A2 2 0 0 0 9.36 16H18v-2H9.36l-.3-1.4h8.2a2 2 0 0 0 1.9-1.4L21 6H6.1L5.6 3.6A1 1 0 0 0 4.6 3H3Z"/></svg>
+      <span class="cart-count" id="cartCount">0</span>
+    </button>
+  </header>
+
+  <section class="hero">
+    <div>
+      <h1>Play for every season</h1>
+      <p>Pre-loved and new toys, cleaned and checked, from <strong>K50</strong>. Pick your toys and finish your order on WhatsApp.</p>
+    </div>
+  </section>
+
+  <main class="wrap">
+    <nav class="tabs" role="tablist" aria-label="Shop sections">
+      <button role="tab" class="tab" data-view="shop" aria-selected="true">In stock <span id="countShop"></span></button>
+      <button role="tab" class="tab" data-view="specials" aria-selected="false">Specials <span id="countSpecials"></span></button>
+      <button role="tab" class="tab" data-view="sold" aria-selected="false">Sold <span id="countSold"></span></button>
+    </nav>
+
+    <div class="filters" id="filters">
+      <div class="chips" id="audienceChips" aria-label="Who is it for"></div>
+      <div class="chips" id="conditionChips" aria-label="Condition"></div>
+      <div class="chips scroll" id="priceChips" aria-label="Price"></div>
+      <div class="filter-row">
+        <select id="category" aria-label="Type of toy"><option value="">All types of toy</option></select>
+        <select id="age" aria-label="Age"><option value="">All ages</option></select>
+        <select id="sort" aria-label="Sort">
+          <option value="new">Newest first</option>
+          <option value="low">Price: low to high</option>
+          <option value="high">Price: high to low</option>
+        </select>
+      </div>
+    </div>
+
+    <p class="sold-intro" id="soldIntro" hidden></p>
+    <p class="status" id="status">Loading toys…</p>
+    <div class="grid" id="grid" aria-live="polite"></div>
+  </main>
+
+  <footer class="foot">
+    <img src="assets/img/logo.svg" alt="" width="90" height="47">
+    <p>All Seazons Play · Lusaka, Zambia</p>
+    <p><a id="footWa" href="#">Chat with us on WhatsApp</a></p>
+  </footer>
+
+  <!-- Toy details -->
+  <dialog class="sheet" id="toyDialog" aria-labelledby="toyTitle">
+    <button class="close" data-close aria-label="Close">×</button>
+    <div id="toyBody"></div>
+  </dialog>
+
+  <!-- Cart and checkout -->
+  <dialog class="sheet drawer" id="cartDialog" aria-labelledby="cartTitle">
+    <button class="close" data-close aria-label="Close">×</button>
+    <div id="cartBody"></div>
+  </dialog>
+
+  <script type="module" src="assets/js/shop.js"></script>
+</body>
+</html>
