@@ -22,7 +22,7 @@ About 30 minutes, once. You need: an email address, a card for the Anthropic acc
 1. Go to [console.anthropic.com](https://console.anthropic.com), sign up, add a little credit under **Billing** ($5 lasts a long time), and create a key under **API Keys**. Copy it.
 2. In Supabase open **Edge Functions → Deploy a new function → Via Editor**. Name it `label-toy`, replace the sample code with everything from [`supabase/functions/label-toy/index.ts`](supabase/functions/label-toy/index.ts) and click **Deploy**.
 3. Open **Edge Functions → Secrets** and add a secret named `ANTHROPIC_API_KEY` with the key you copied.
-   - Optional: to make labelling about 20 times cheaper, add `LABEL_MODEL` = `claude-haiku-5-5`. It is less accurate on brand names.
+   - Optional: to make labelling about 40 times cheaper, add `LABEL_MODEL` = `claude-haiku-5-5`. It is less accurate on brand names.
 
 If labelling is not set up yet, uploads still work: toys arrive on the Review page as "Unnamed toy" for you to name.
 
