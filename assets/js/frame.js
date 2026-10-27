@@ -1,8 +1,9 @@
-// Draws a toy photo into the owner's own frames (assets/img/frames, made from
+// Social media pictures: draws a toy photo into the owner's own frames (assets/img/frames, made from
 // the Branding Assets: blue for boys, pink for girls, pink-to-blue for
 // neutral, logo top left, red USED/NEW badge top right). The toy's name sits
 // at the bottom in a bubble of the frame colour: a thin line on top
 // (tagline, e.g. "Big & Small") and the big name under it ("Barbie Set").
+// The website itself shows the plain photo (renderPhoto, at the bottom).
 
 const SIZE = 1080;
 // The see-through window in the frame files.
@@ -202,8 +203,8 @@ export function cleanFocus(focus) {
 
 // Where the photo stops short of the window, its own edge is mirrored
 // outwards: a table or wall carries on with no seam.
-function mirrorFill(ctx, image, dx, dy, dw, dh) {
-  const L = WIN.x - 8, T = WIN.y - 8, R = WIN.x + WIN.w + 8, B = WIN.y + WIN.h + 8;
+function mirrorFill(ctx, image, dx, dy, dw, dh, box = { x: WIN.x - 8, y: WIN.y - 8, w: WIN.w + 16, h: WIN.h + 16 }) {
+  const L = box.x, T = box.y, R = box.x + box.w, B = box.y + box.h;
   for (const ox of [-1, 0, 1]) {
     for (const oy of [-1, 0, 1]) {
       if (!ox && !oy) continue;
@@ -334,5 +335,44 @@ export async function renderFrame({ image, name, tagline = '', audience = 'neutr
   }
 
   drawName(ctx, { big, small, fonts, nameBase, tagBase, look, bubble, nameColor, tagColor });
+  return c;
+}
+
+// The plain square photo the website shows: no frame, no name. The photo
+// fills the square with the toy whole and centred; if the toy doesn't fit,
+// the photo shrinks and its background carries on past the edges (mirrored
+// from the plate). Without a focus box it is a simple centre crop.
+export function renderPhoto({ image, focus = null, plate = null, size = 1080 }) {
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, size, size);
+  const [iw, ih] = dims(image);
+  const cover = Math.max(size / iw, size / ih);
+  let scale = cover;
+  let [fl, ft, fr, fb] = [0, 0, 1, 1];
+  if (focus) {
+    [fl, ft, fr, fb] = cleanFocus(focus);
+    const room = size * 0.92;
+    scale = Math.min(cover, room / ((fr - fl) * iw), room / ((fb - ft) * ih));
+  }
+  const dw = iw * scale;
+  const dh = ih * scale;
+  let dx = size / 2 - ((fl + fr) / 2) * dw;
+  let dy = size / 2 - ((ft + fb) / 2) * dh;
+  // Fill the square where the photo is big enough, keeping the toy whole.
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  if (dw >= size) {
+    const nx = clamp(dx, size - dw, 0);
+    if (nx + fl * dw >= 0 && nx + fr * dw <= size) dx = nx;
+  }
+  if (dh >= size) {
+    const ny = clamp(dy, size - dh, 0);
+    if (ny + ft * dh >= 0 && ny + fb * dh <= size) dy = ny;
+  }
+  mirrorFill(ctx, plate || image, dx, dy, dw, dh, { x: 0, y: 0, w: size, h: size });
+  ctx.drawImage(image, dx, dy, dw, dh);
   return c;
 }

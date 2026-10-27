@@ -87,6 +87,10 @@ test('approve all puts the toys in the shop', async () => {
   await shopper.locator('.card').first().waitFor();
   assert.equal(await shopper.locator('.card').count(), 3);
   await shopper.waitForFunction(() => [...document.querySelectorAll('.card .pic img')].every((i) => i.complete && i.naturalWidth === 1080));
+  // The website shows the plain photos; the framed pictures are for social media.
+  const srcs = await shopper.locator('.card .pic img').evaluateAll((els) => els.map((i) => i.src));
+  assert.ok(srcs.every((src) => /\/photo-\d+\.jpg$/.test(src)), srcs.join(' '));
+  assert.equal(await shopper.locator('.card .cond').first().textContent(), 'Used');
   await shot(shopper, '03-shop');
   await shopper.getByRole('button', { name: 'Boys' }).click();
   assert.equal(await shopper.locator('.card').count(), 1);
@@ -220,15 +224,30 @@ test('a Claude pack adds named toys without the AI', async () => {
   // The pack's cutout and focus box came through, so the toy can fill the frame.
   const pg = new (require('pg').Client)({ connectionString: h.dbUrl });
   await pg.connect();
-  const ponyRow = await pg.query("select has_cutout, focus from toys where name = 'Pink Pony Stable'");
+  const ponyRow = await pg.query("select has_cutout, focus, photo_path, image_path from toys where name = 'Pink Pony Stable'");
   await pg.end();
   assert.equal(ponyRow.rows[0].has_cutout, true);
+  assert.match(ponyRow.rows[0].photo_path, /\/photo-\d+\.jpg$/);
+  assert.notEqual(ponyRow.rows[0].photo_path, ponyRow.rows[0].image_path);
   assert.equal(ponyRow.rows[0].focus.length, 4);
   assert.equal(await tractor.locator('[data-seg=condition][data-value=new]').getAttribute('aria-pressed'), 'true');
   const prices = await staff.locator('.rcard [data-f=price]').evaluateAll((els) => els.map((e) => e.value));
   assert.deepEqual(prices.sort(), ['100', '50']);
   await pony.locator('.pic img').evaluate((i) => i.complete || new Promise((r) => { i.onload = r; }));
   assert.equal(await pony.locator('.pic img').evaluate((i) => i.naturalWidth), 1080);
+});
+
+test('stock page downloads a social media pack of framed pictures', async () => {
+  await staff.goto(`${h.url}/staff/#stock`);
+  await staff.locator('#fStatus').selectOption('');
+  await staff.locator('.item-row').first().waitFor();
+  const [dl] = await Promise.all([staff.waitForEvent('download'), staff.locator('#socialPack').click()]);
+  const file = await dl.path();
+  const names = JSON.parse(execSync(`python3 -c "import zipfile,sys,json;z=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None;print(json.dumps(z.namelist()))" ${file}`).toString());
+  assert.ok(names.includes('captions.txt'));
+  assert.ok(names.some((n) => /^001-.+\.jpg$/.test(n)), names.join(' '));
+  const captions = execSync(`python3 -c "import zipfile,sys;print(zipfile.ZipFile(sys.argv[1]).read('captions.txt').decode())" ${file}`).toString();
+  assert.match(captions, /Order: http.+#/);
 });
 
 test('no browser errors along the way', () => {

@@ -4,7 +4,7 @@ import {
   priceBands, AUDIENCES, CONDITIONS, AGES, timeLabel,
 } from './lib.js';
 
-const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,quantity,status,image_path,created_at,approved_at,sold_at';
+const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,quantity,status,image_path,photo_path,created_at,approved_at,sold_at';
 const $ = (sel) => document.querySelector(sel);
 
 const state = {
@@ -164,6 +164,9 @@ function priceHtml(t) {
   return `<span class="price">${kwacha(p)}${p < t.price ? `<s>${kwacha(t.price)}</s>` : ''}</span>`;
 }
 
+// The website shows the plain photo; the framed picture is for social media.
+const photoUrl = (t) => imageUrl(t?.photo_path || t?.image_path);
+
 function inCart(id) {
   return state.cart.find((c) => c.id === id);
 }
@@ -178,13 +181,14 @@ function cardHtml(t) {
   const button = sold || hold ? ''
     : `<button class="btn add ${added ? 'in-cart' : ''}" data-add="${t.id}">${added ? 'In cart ✓' : 'Add to cart'}</button>`;
   return `
-    <article class="card ${sold ? 'is-sold' : ''} ${hold ? 'is-hold' : ''}" data-id="${t.id}">
+    <article class="card for-${esc(t.audience || 'neutral')} ${sold ? 'is-sold' : ''} ${hold ? 'is-hold' : ''}" data-id="${t.id}">
       <button class="pic" data-open="${t.id}" aria-label="See ${esc(t.name)}">
-        ${ribbon}<img src="${esc(imageUrl(t.image_path))}" alt="${esc(t.name)}" loading="lazy" width="540" height="540">
+        ${ribbon}<span class="cond ${t.condition === 'new' ? 'new' : ''}">${esc(CONDITIONS[t.condition] || 'Used')}</span>
+        <img src="${esc(photoUrl(t))}" alt="${esc(t.name)}" loading="lazy" width="540" height="540">
       </button>
       <div class="body">
         <div class="name">${esc(t.name)}</div>
-        <div class="meta">${esc(AUDIENCES[t.audience]?.label || '')} · ${esc(CONDITIONS[t.condition])}${t.age_range ? ' · ' + esc(t.age_range) + ' yrs' : ''}</div>
+        ${t.age_range ? `<div class="meta">${esc(t.age_range)} yrs</div>` : ''}
         ${sold ? '<div class="meta">Found a new home</div>' : priceHtml(t)}
         <div class="actions">${button}</div>
       </div>
@@ -232,7 +236,7 @@ function openToy(t) {
   const hold = t.status === 'reserved';
   $('#toyBody').innerHTML = `
     <div class="inner toy-detail">
-      <img src="${esc(imageUrl(t.image_path))}" alt="${esc(t.name)}" width="1080" height="1080">
+      <img src="${esc(photoUrl(t))}" alt="${esc(t.name)}" width="1080" height="1080">
       <h2 id="toyTitle">${esc(t.name)}</h2>
       ${sold ? '<p><strong>Sold.</strong> Ask us on WhatsApp if you want something similar.</p>' : priceHtml(t)}
       <div class="tags">
@@ -332,7 +336,7 @@ function renderCart() {
     const gone = !l.toy || l.toy.status !== 'available';
     const name = l.toy?.name || 'This toy';
     return `<li class="cart-item">
-      <img src="${esc(imageUrl(l.toy?.image_path))}" alt="">
+      <img src="${esc(photoUrl(l.toy))}" alt="">
       <div><div class="name">${esc(name)}</div>
         ${gone ? '<div class="error-text">No longer available</div>'
           : `<div>${kwacha(effectivePrice(l.toy))}${l.toy.quantity > 1 ? ` · <label>Qty <select data-qty="${l.id}">${Array.from({ length: Math.min(l.toy.quantity, 10) }, (_, i) => `<option ${i + 1 === l.qty ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>` : ''}</div>`}

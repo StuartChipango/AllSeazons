@@ -102,6 +102,7 @@ alter table public.toys add column if not exists legacy_id text;
 alter table public.toys add column if not exists tagline text;
 alter table public.toys add column if not exists focus jsonb;
 alter table public.toys add column if not exists has_cutout boolean not null default false;
+alter table public.toys add column if not exists photo_path text;
 create sequence if not exists public.order_code_seq start 1001;
 create table if not exists public.orders (
 id uuid primary key default gen_random_uuid(),
@@ -321,7 +322,7 @@ v_town.courier, v_method, v_address, v_note,
 now() + make_interval(mins => s.hold_minutes))
 returning * into v_order;
 insert into public.order_items (order_id, toy_id, toy_code, name, condition, price, qty, image_path)
-select v_order.id, t.id, t.code, t.name, t.condition, coalesce(t.sale_price, t.price), x.qty, t.image_path
+select v_order.id, t.id, t.code, t.name, t.condition, coalesce(t.sale_price, t.price), x.qty, coalesce(t.photo_path, t.image_path)
 from (
 select (e->>'toy_id')::uuid as toy_id, sum(greatest(coalesce((e->>'qty')::int, 1), 1))::int as qty
 from jsonb_array_elements(p_items) e
@@ -489,7 +490,7 @@ nullif(regexp_replace(coalesce(p_phone, ''), '[^0-9+]', '', 'g'), ''), 'shop', '
 returning * into o;
 insert into public.order_items (order_id, toy_id, toy_code, name, condition, price, qty, image_path)
 select o.id, t.id, t.code, t.name, t.condition,
-coalesce(nullif(x.price, 0), t.sale_price, t.price), x.qty, t.image_path
+coalesce(nullif(x.price, 0), t.sale_price, t.price), x.qty, coalesce(t.photo_path, t.image_path)
 from (
 select (e->>'toy_id')::uuid as toy_id,
 sum(greatest(coalesce((e->>'qty')::int, 1), 1))::int as qty,

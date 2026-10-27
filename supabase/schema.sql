@@ -141,6 +141,9 @@ alter table public.toys add column if not exists focus jsonb;
 -- A Claude pack gave a cutout of the toy and a toy-free background (raw
 -- bucket: <id>-cut.png, <id>-plate.jpg), so it can pop out of the frame.
 alter table public.toys add column if not exists has_cutout boolean not null default false;
+-- The plain photo the website shows (toys bucket). image_path is the
+-- branded, framed picture for social media.
+alter table public.toys add column if not exists photo_path text;
 
 -- ---------------------------------------------------------------------
 -- Orders.
@@ -401,7 +404,7 @@ begin
   returning * into v_order;
 
   insert into public.order_items (order_id, toy_id, toy_code, name, condition, price, qty, image_path)
-  select v_order.id, t.id, t.code, t.name, t.condition, coalesce(t.sale_price, t.price), x.qty, t.image_path
+  select v_order.id, t.id, t.code, t.name, t.condition, coalesce(t.sale_price, t.price), x.qty, coalesce(t.photo_path, t.image_path)
   from (
     select (e->>'toy_id')::uuid as toy_id, sum(greatest(coalesce((e->>'qty')::int, 1), 1))::int as qty
     from jsonb_array_elements(p_items) e
@@ -592,7 +595,7 @@ begin
 
   insert into public.order_items (order_id, toy_id, toy_code, name, condition, price, qty, image_path)
   select o.id, t.id, t.code, t.name, t.condition,
-         coalesce(nullif(x.price, 0), t.sale_price, t.price), x.qty, t.image_path
+         coalesce(nullif(x.price, 0), t.sale_price, t.price), x.qty, coalesce(t.photo_path, t.image_path)
   from (
     select (e->>'toy_id')::uuid as toy_id,
            sum(greatest(coalesce((e->>'qty')::int, 1), 1))::int as qty,
@@ -696,7 +699,8 @@ grant execute on function public.is_staff() to anon, authenticated;
 grant execute on function public.parcel_size(int) to anon, authenticated;
 
 -- =====================================================================
--- Photo storage: "toys" holds the framed pictures the shop shows (public),
+-- Photo storage: "toys" holds the plain website photos and the framed
+-- social media pictures (public),
 -- "raw" holds your original photos (staff only).
 -- =====================================================================
 insert into storage.buckets (id, name, public) values ('toys', 'toys', true)

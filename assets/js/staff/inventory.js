@@ -3,6 +3,7 @@ import { supabase, imageUrl, friendlyError } from '../db.js';
 import { shared, refreshBadges } from './app.js';
 import { $, $$, toast, openPanel, closePanel, confirmBox, seg, download, busy, dateLabel } from './ui.js';
 import { reframe, replacePhoto, deleteToyFiles } from './photos.js';
+import { makeZip } from '../unzip.js';
 
 const STATUS_LABEL = {
   available: 'In shop', review: 'Needs review', reserved: 'On hold', sold: 'Sold', damaged: 'Damaged', hidden: 'Hidden',
@@ -52,6 +53,7 @@ function render() {
   root.innerHTML = `
     <div class="page-head">
       <h1>Stock</h1>
+      <button class="btn small" id="socialPack" title="The framed pictures and captions of the toys listed below, for Facebook and the other pages">Social media pack</button>
       <button class="btn ghost small" id="exportCsv">Export CSV</button>
       <label class="btn ghost small">Import CSV<input type="file" accept=".csv,text/csv" id="importCsv" hidden></label>
     </div>
@@ -87,6 +89,7 @@ function render() {
         <button class="btn small" data-bulk="unspecial">Remove special</button>
         <button class="btn small" data-bulk="show">Show in shop</button>
         <button class="btn small" data-bulk="hide">Hide</button>
+        <button class="btn small" data-bulk="social">Social media pack</button>
         <button class="btn small" data-bulk="clear">Clear</button>
       </div>` : ''}
     <div class="mobile-more"><a class="btn ghost" href="#boxes">Boxes</a><a class="btn ghost" href="#settings">Settings</a><a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
@@ -109,6 +112,7 @@ function wire() {
   });
   $$('[data-bulk]', root).forEach((b) => b.onclick = () => bulk(b.dataset.bulk, b));
   $('#exportCsv', root).onclick = exportCsv;
+  $('#socialPack', root).onclick = (e) => socialPack(toys.filter(matches), e.currentTarget);
   $('#importCsv', root).onchange = (e) => importCsv(e.target.files[0]);
 }
 
@@ -117,6 +121,7 @@ async function bulk(action, button) {
   const picked = toys.filter((t) => selected.has(t.id));
   if (action === 'clear') { selected.clear(); return render(); }
   if (action === 'sell') return sellPanel(picked);
+  if (action === 'social') return socialPack(picked, button);
   let changes;
   if (action === 'special') {
     const v = prompt('Special price in kwacha for all selected toys (leave empty to just mark them special)', '');
@@ -309,4 +314,43 @@ async function importCsv(file) {
   toast(`Imported ${records.length} toys`);
   load();
   refreshBadges();
+}
+
+// The framed pictures (the ones with the brand frame and name) are for
+// Facebook, Instagram, WhatsApp status and so on; the website shows the
+// plain photos. One zip: 001-name.jpg... plus captions.txt to copy from.
+const PACK_MAX = 60;
+async function socialPack(list, button) {
+  const ready = list.filter((t) => t.image_path);
+  if (!ready.length) return toast('None of these toys has a picture yet.', true);
+  if (ready.length > PACK_MAX && !(await confirmBox(`That is ${ready.length} toys. Download the first ${PACK_MAX}? Use the filters or tick toys to choose.`))) return;
+  const picks = ready.slice(0, PACK_MAX);
+  busy(button, true, 'Making pack…');
+  try {
+    const files = [];
+    const captions = [];
+    for (const [i, t] of picks.entries()) {
+      const res = await fetch(imageUrl(t.image_path));
+      if (!res.ok) throw new Error(`The picture of ${t.name} could not be downloaded.`);
+      const num = String(i + 1).padStart(3, '0');
+      const slug = t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+      files.push({ name: `${num}-${slug || 'toy'}.jpg`, data: new Uint8Array(await res.arrayBuffer()) });
+      const link = new URL(`../#${encodeURIComponent(t.code)}`, location.href).href;
+      captions.push([`${num}. ${t.name}${t.tagline ? ` (${t.tagline})` : ''}`,
+        `${kwacha(effectivePrice(t))} · ${CONDITIONS[t.condition]}${t.age_range ? ` · ${t.age_range} yrs` : ''}`,
+        t.description || '', `Order: ${link}`].filter(Boolean).join('\n'));
+    }
+    files.push({ name: 'captions.txt', data: captions.join('\n\n') + '\n' });
+    const url = URL.createObjectURL(makeZip(files));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `social-media-pack-${new Date().toISOString().slice(0, 10)}.zip`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast(`${picks.length} pictures ready to post`);
+  } catch (e) {
+    toast(friendlyError(e), true);
+  } finally {
+    busy(button, false);
+  }
 }
