@@ -8,7 +8,7 @@ About 30 minutes, once. You need: an email address, a card for the Anthropic acc
    - Name: `allseazons`
    - Database password: make a strong one and save it somewhere safe.
    - Region: the closest one offered to Zambia.
-2. When the project is ready, open **SQL Editor**, click **New query**, paste everything from [`supabase/schema.sql`](supabase/schema.sql) and click **Run**. You should see "Success".
+2. When the project is ready, open **SQL Editor**, click **New query**, paste everything from [`supabase/schema-paste.sql`](supabase/schema-paste.sql) (the same rules as `schema.sql` with comments and spacing removed, so copying cannot break it) and click **Run**. You should see "Success".
 3. Create your staff login: **Authentication → Users → Add user → Create new user**. Enter your email and a password, and tick **Auto Confirm User**.
 4. Put yourself on the staff list: back in **SQL Editor**, run this with your own email:
    ```sql
