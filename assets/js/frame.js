@@ -189,7 +189,10 @@ function drawName(ctx, { big, small, fonts, nameBase, tagBase, look, bubble, nam
 
 // focus: where the toy is in the photo, [left, top, right, bottom] as
 // fractions of the photo (Claude packs give one). Without it the middle 84%
-// is kept safe.
+// is kept safe. cutout: the toy cut out of the photo (a mask whose alpha is
+// the toy), which lets a tall toy pop out over the frame like the brand
+// examples. plate: the photo with the toy painted out, used to carry the
+// table on past the photo's edges.
 export function cleanFocus(focus) {
   const f = Array.isArray(focus) ? focus.map(Number) : null;
   if (!f || f.length !== 4 || f.some((v) => !Number.isFinite(v))) return [0.08, 0.08, 0.92, 0.92];
@@ -197,31 +200,38 @@ export function cleanFocus(focus) {
   return r - l < 0.05 || b - t < 0.05 ? [0.08, 0.08, 0.92, 0.92] : [l, t, r, b];
 }
 
-// The photo at its drawn size, faded out along the sides that end inside the
-// window so it melts into the blurred copy behind it.
-function softEdges(image, w, h, sides) {
+// Where the photo stops short of the window, its own edge is mirrored
+// outwards: a table or wall carries on with no seam.
+function mirrorFill(ctx, image, dx, dy, dw, dh) {
+  const L = WIN.x - 8, T = WIN.y - 8, R = WIN.x + WIN.w + 8, B = WIN.y + WIN.h + 8;
+  for (const ox of [-1, 0, 1]) {
+    for (const oy of [-1, 0, 1]) {
+      if (!ox && !oy) continue;
+      const x = dx + ox * dw;
+      const y = dy + oy * dh;
+      if (x >= R || x + dw <= L || y >= B || y + dh <= T) continue;
+      ctx.save();
+      ctx.translate(x + (ox ? dw : 0), y + (oy ? dh : 0));
+      ctx.scale(ox ? -1 : 1, oy ? -1 : 1);
+      ctx.drawImage(image, 0, 0, dw, dh);
+      ctx.restore();
+    }
+  }
+}
+
+// The photo at its drawn size, kept only where the cutout mask is solid.
+function cutoutCanvas(image, mask, w, h) {
   const c = document.createElement('canvas');
   c.width = Math.round(w);
   c.height = Math.round(h);
   const g = c.getContext('2d');
   g.drawImage(image, 0, 0, c.width, c.height);
-  g.globalCompositeOperation = 'destination-out';
-  const F = 80;
-  const fade = (x0, y0, x1, y1, rx, ry, rw, rh) => {
-    const grad = g.createLinearGradient(x0, y0, x1, y1);
-    grad.addColorStop(0, 'rgba(0,0,0,1)');
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = grad;
-    g.fillRect(rx, ry, rw, rh);
-  };
-  if (sides.left) fade(0, 0, F, 0, 0, 0, F, c.height);
-  if (sides.right) fade(c.width, 0, c.width - F, 0, c.width - F, 0, F, c.height);
-  if (sides.top) fade(0, 0, 0, F, 0, 0, c.width, F);
-  if (sides.bottom) fade(0, c.height, 0, c.height - F, 0, c.height - F, c.width, F);
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(mask, 0, 0, c.width, c.height);
   return c;
 }
 
-export async function renderFrame({ image, name, tagline = '', audience = 'neutral', condition = 'used', look = 'classic', focus = null }) {
+export async function renderFrame({ image, name, tagline = '', audience = 'neutral', condition = 'used', look = 'classic', focus = null, cutout = null, plate = null }) {
   const fonts = await loadFrameFonts();
   const style = STYLE[audience] ? audience : 'neutral';
   const isNew = condition === 'new';
@@ -248,51 +258,49 @@ export async function renderFrame({ image, name, tagline = '', audience = 'neutr
   const tagBase = nameBase - big.size * 0.86;
   const textTop = small ? tagBase - small.size * 0.78 - 26 : nameBase - big.size * 0.78 - 26;
 
-  // Photo: the toy (focus box) is centred in the space above the name with
-  // the same gap on every side, and the photo around it fills the window.
-  // Only background is ever cut off. If the toy is too big for that, the photo
-  // shrinks and a blurred copy of it fills the rest, so nothing is left empty.
+  // Photo: always fills the window. The toy (focus box) is centred in the
+  // space above the name, as big as fits, never under the name. A toy too
+  // tall for that may pop out over the top of the frame (when there is a
+  // cutout); only if it still doesn't fit does the photo shrink, and then the
+  // table or wall is carried on past its edges (mirrored from the plate).
   const [iw, ih] = dims(image);
   const cover = Math.max(WIN.w / iw, WIN.h / ih);
-  const area = { x: WIN.x + GAP, y: WIN.y + GAP, w: WIN.w - GAP * 2, h: textTop - GAP - (WIN.y + GAP) };
   const [fl, ft, fr, fb] = cleanFocus(focus);
   const fw = (fr - fl) * iw;
   const fh = (fb - ft) * ih;
-  const scale = Math.min(area.w / fw, area.h / fh, cover * 2.2);
+  const pop = !!cutout;
+  const zone = { l: WIN.x + GAP, r: WIN.x + WIN.w - GAP, t: pop ? 14 : WIN.y + GAP, b: textTop - GAP };
+  const sideRoom = pop ? WIN.w + 2 * (WIN.x - 14) : zone.r - zone.l;
+  const sFit = Math.min((zone.r - zone.l) / fw, (zone.b - (WIN.y + GAP)) / fh);
+  const sMax = Math.min(sideRoom / fw, (zone.b - zone.t) / fh);
+  const scale = sFit >= cover ? Math.min(sFit, cover * 2.2) : Math.min(cover, sMax);
   const dw = iw * scale;
   const dh = ih * scale;
-  const place = (start, size, drawn, focusMid, areaMid) => {
-    const centred = areaMid - focusMid * drawn;
-    if (drawn < size) return centred;
-    return Math.min(start, Math.max(start + size - drawn, centred));
-  };
-  let dx = place(WIN.x, WIN.w, dw, (fl + fr) / 2, area.x + area.w / 2);
-  let dy = place(WIN.y, WIN.h, dh, (ft + fb) / 2, area.y + area.h / 2);
-  // Keeping the window filled must not push the toy out of its space.
-  const fits = (x0, y0) => x0 + fl * dw >= area.x - 1 && x0 + fr * dw <= area.x + area.w + 1
-    && y0 + ft * dh >= area.y - 1 && y0 + fb * dh <= area.y + area.h + 1;
-  if (!fits(dx, dy)) {
-    dx = area.x + area.w / 2 - ((fl + fr) / 2) * dw;
-    dy = area.y + area.h / 2 - ((ft + fb) / 2) * dh;
+  const toyH = fh * scale;
+  const midX = WIN.x + WIN.w / 2;
+  const fitsAbove = toyH <= zone.b - (WIN.y + GAP);
+  const targetTop = fitsAbove ? (WIN.y + GAP + zone.b) / 2 - toyH / 2 : Math.max(zone.t, Math.min(WIN.y + GAP, zone.b - toyH));
+  let dx = midX - ((fl + fr) / 2) * dw;
+  let dy = targetTop - ft * dh;
+  // Fill the window if the photo is big enough, without moving the toy out
+  // of where it may go.
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  if (dw >= WIN.w) {
+    const nx = clamp(dx, WIN.x + WIN.w - dw, WIN.x);
+    const okX = (x) => (pop ? x + fl * dw >= 14 && x + fr * dw <= SIZE - 14 : x + fl * dw >= zone.l - 1 && x + fr * dw <= zone.r + 1);
+    if (okX(nx)) dx = nx;
   }
+  if (dh >= WIN.h) {
+    const ny = clamp(dy, WIN.y + WIN.h - dh, WIN.y);
+    if (ny + ft * dh >= zone.t - 1 && ny + fb * dh <= zone.b + 1) dy = ny;
+  }
+
   ctx.save();
   ctx.beginPath();
   ctx.rect(WIN.x - 4, WIN.y - 4, WIN.w + 8, WIN.h + 8);
   ctx.clip();
-  const gaps = dx > WIN.x + 0.5 || dy > WIN.y + 0.5 || dx + dw < WIN.x + WIN.w - 0.5 || dy + dh < WIN.y + WIN.h - 0.5;
-  if (gaps) {
-    // Gaps: a strongly blurred copy of the same photo fills the window, and
-    // the sharp photo melts into it, so the colours carry on behind the toy.
-    const bs = Math.max(cover, dw / iw) * 1.15;
-    if ('filter' in ctx) ctx.filter = 'blur(36px) saturate(1.05)';
-    ctx.drawImage(image, dx + dw / 2 - (iw * bs) / 2, dy + dh / 2 - (ih * bs) / 2, iw * bs, ih * bs);
-    ctx.filter = 'none';
-    ctx.drawImage(softEdges(image, dw, dh, {
-      left: dx > WIN.x, top: dy > WIN.y, right: dx + dw < WIN.x + WIN.w, bottom: dy + dh < WIN.y + WIN.h,
-    }), dx, dy);
-  } else {
-    ctx.drawImage(image, dx, dy, dw, dh);
-  }
+  mirrorFill(ctx, plate || image, dx, dy, dw, dh);
+  ctx.drawImage(image, dx, dy, dw, dh);
   ctx.restore();
 
   ctx.drawImage(frame, 0, 0, SIZE, SIZE);
@@ -307,6 +315,21 @@ export async function renderFrame({ image, name, tagline = '', audience = 'neutr
     ctx.textBaseline = 'middle';
     fit(ctx, 'New', 112, 64, 40, 700, fonts.bold);
     ctx.fillText('New', 0, 3);
+    ctx.restore();
+  }
+
+  // Pop-out: the parts of the toy outside the window, drawn over the frame
+  // (never over the logo or the badge).
+  if (pop) {
+    const cut = cutoutCanvas(image, cutout, dw, dh);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, SIZE, SIZE);
+    ctx.rect(WIN.x, WIN.y, WIN.w, WIN.h);
+    ctx.rect(0, 0, 250, 140);
+    ctx.rect(870, 0, 210, 185);
+    ctx.clip('evenodd');
+    ctx.drawImage(cut, dx, dy);
     ctx.restore();
   }
 

@@ -86,17 +86,22 @@ function wire() {
   drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') $('#files', root).click(); };
 }
 
+// Claude packs carry, next to 001.jpg, 001-cut.png (the toy cut out) and
+// 001-plate.jpg (the photo with the toy painted out).
+const EXTRA = /-(cut\.png|plate\.jpg)$/i;
 const isImage = (f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|heic)$/i.test(f.name);
 
 // Photos, plus any Claude pack (.zip) or labels.csv that came with them.
 async function addFiles(list) {
   let files = [...list];
   let labels = new Map();
+  const extras = new Map();
   notice = null;
   try {
     for (const zip of files.filter((f) => /\.zip$/i.test(f.name))) {
       for (const entry of await readZip(zip)) {
         if (/\.csv$/i.test(entry.name)) labels = new Map([...labels, ...packLabels(parseCsv(await entry.blob.text()))]);
+        else if (EXTRA.test(entry.name)) extras.set(entry.name.toLowerCase(), entry.blob);
         else if (/\.(jpe?g|png|webp)$/i.test(entry.name)) {
           const type = /\.png$/i.test(entry.name) ? 'image/png' : /\.webp$/i.test(entry.name) ? 'image/webp' : 'image/jpeg';
           files.push(new File([entry.blob], entry.name, { type }));
@@ -109,7 +114,8 @@ async function addFiles(list) {
   } catch (e) {
     notice = { bad: true, text: 'Could not open the Claude pack: ' + e.message };
   }
-  files = files.filter(isImage);
+  for (const f of files.filter((x) => EXTRA.test(x.name))) extras.set(f.name.toLowerCase(), f);
+  files = files.filter((f) => isImage(f) && !EXTRA.test(f.name));
   if (labels.size) {
     const missing = files.filter((f) => !labels.has(labelKey(f.name))).length;
     notice = { bad: !!missing, text: `${files.length - missing} photo${files.length - missing === 1 ? '' : 's'} named by Claude.`
@@ -121,7 +127,12 @@ async function addFiles(list) {
       thumb: URL.createObjectURL(file),
       state: 'waiting',
       step: 'Waiting',
-      options: { ...opts, labels: labels.get(labelKey(file.name)) || null },
+      options: {
+        ...opts,
+        labels: labels.get(labelKey(file.name)) || null,
+        cutout: extras.get(`${labelKey(file.name)}-cut.png`) || null,
+        plate: extras.get(`${labelKey(file.name)}-plate.jpg`) || null,
+      },
     });
   }
   render();

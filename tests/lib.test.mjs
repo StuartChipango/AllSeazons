@@ -112,7 +112,7 @@ test('a Claude pack opens, stored or deflated, and its labels match the photos',
   for (const name of ['claude-pack.zip', 'claude-pack-deflated.zip']) {
     const buf = await readFile(new URL(`./fixtures/${name}`, import.meta.url));
     const files = await readZip(new Blob([buf]));
-    assert.deepEqual(files.map((f) => f.name).sort(), ['001.jpg', '002.jpg', 'labels.csv']);
+    assert.deepEqual(files.map((f) => f.name).filter((n) => !/-(cut|plate)\./.test(n)).sort(), ['001.jpg', '002.jpg', 'labels.csv']);
     const csv = await files.find((f) => f.name === 'labels.csv').blob.text();
     const labels = packLabels(parseCsv(csv));
     assert.equal(labels.get(labelKey('IMG/001.JPG')).name, 'Pink Pony Stable');

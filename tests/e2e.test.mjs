@@ -217,6 +217,13 @@ test('a Claude pack adds named toys without the AI', async () => {
   await tractor.waitFor();
   assert.equal(await pony.locator('[data-seg=audience][data-value=girls]').getAttribute('aria-pressed'), 'true');
   assert.equal(await pony.locator('[data-f=tagline]').inputValue(), 'With Pony');
+  // The pack's cutout and focus box came through, so the toy can fill the frame.
+  const pg = new (require('pg').Client)({ connectionString: h.dbUrl });
+  await pg.connect();
+  const ponyRow = await pg.query("select has_cutout, focus from toys where name = 'Pink Pony Stable'");
+  await pg.end();
+  assert.equal(ponyRow.rows[0].has_cutout, true);
+  assert.equal(ponyRow.rows[0].focus.length, 4);
   assert.equal(await tractor.locator('[data-seg=condition][data-value=new]').getAttribute('aria-pressed'), 'true');
   const prices = await staff.locator('.rcard [data-f=price]').evaluateAll((els) => els.map((e) => e.value));
   assert.deepEqual(prices.sort(), ['100', '50']);
