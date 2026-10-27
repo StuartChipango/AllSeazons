@@ -199,6 +199,14 @@ export function nameFromFile(filename) {
 // photo file name without folder or extension, lower case.
 export const labelKey = (filename) => String(filename || '').split(/[\\/]/).pop().replace(/\.[^.]+$/, '').trim().toLowerCase();
 
+// "0.1,0.2,0.9,0.8" (or percentages) -> [0.1, 0.2, 0.9, 0.8]; anything else -> null.
+export function parseFocus(text) {
+  const n = String(text || '').split(/[\s,;]+/).filter(Boolean).map(Number);
+  if (n.length !== 4 || n.some((v) => !Number.isFinite(v))) return null;
+  const f = n.some((v) => v > 1) ? n.map((v) => v / 100) : n;
+  return f[2] > f[0] && f[3] > f[1] ? f.map((v) => Math.min(1, Math.max(0, Math.round(v * 1000) / 1000))) : null;
+}
+
 export function packLabels(rows) {
   const map = new Map();
   for (const r of rows) {
@@ -212,6 +220,7 @@ export function packLabels(rows) {
     map.set(key, {
       name: get('name').slice(0, 40) || 'Unnamed toy',
       tagline: get('tagline').slice(0, 30),
+      focus: parseFocus(get('focus')),
       brand: get('brand'),
       audience: ['boys', 'girls', 'neutral'].includes(audience) ? audience : 'neutral',
       condition: condition.startsWith('new') ? 'new' : 'used',

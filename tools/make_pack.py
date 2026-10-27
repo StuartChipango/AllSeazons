@@ -12,6 +12,9 @@ labels.json is a list, one entry per photo, in this shape:
       "age_range": "3-5", "description": "A pink camper with pop-up roof.",
       "price": 75, "confidence": "high"}]
 
+focus is where the toy is in the photo, [left, top, right, bottom] as
+fractions of the width/height, covering every part of the toy; the frame
+then fills the window without cutting the toy.
 tagline is the small thin line above the name on the picture ("" for none).
 price is optional (blank = the price picked on the Add toys page).
 The pack holds the photos as 001.jpg, 002.jpg... plus labels.csv. In the
@@ -26,7 +29,7 @@ CATEGORIES = {"Dolls & Accessories", "Cars & Vehicles", "Building & Blocks", "So
               "Baby & Toddler", "Puzzles & Games", "Action Figures", "Pretend Play",
               "Learning Toys", "Outdoor & Sports", "Books", "Other"}
 COLUMNS = ["file", "tagline", "name", "brand", "audience", "condition", "category", "age_range",
-           "description", "price", "confidence"]
+           "description", "price", "confidence", "focus"]
 
 
 def jpeg(path):
@@ -53,6 +56,13 @@ def main(labels_path, out_path):
             row["file"] = file
             row["name"] = str(row["name"]).strip()[:40] or "Unnamed toy"
             row["tagline"] = str(row["tagline"] or "").strip()[:30]
+            focus = item.get("focus")
+            if focus:
+                ok = isinstance(focus, list) and len(focus) == 4 and all(isinstance(v, (int, float)) for v in focus) \
+                    and 0 <= focus[0] < focus[2] <= 1 and 0 <= focus[1] < focus[3] <= 1
+                if not ok:
+                    problems.append(f"{file}: focus {focus!r} must be [left, top, right, bottom] fractions 0-1")
+                row["focus"] = ",".join(f"{v:.3f}" for v in focus) if ok else ""
             if row["audience"] not in AUDIENCES:
                 problems.append(f"{file}: audience {row['audience']!r} is not boys/girls/neutral")
             if row["condition"] not in {"used", "new"}:

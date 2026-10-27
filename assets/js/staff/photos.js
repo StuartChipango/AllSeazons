@@ -23,7 +23,7 @@ export async function askAI(image) {
 }
 
 async function uploadFramed(toyId, image, fields) {
-  const canvas = await renderFrame({ image, name: fields.name, tagline: fields.tagline, audience: fields.audience, condition: fields.condition });
+  const canvas = await renderFrame({ image, name: fields.name, tagline: fields.tagline, audience: fields.audience, condition: fields.condition, focus: fields.focus });
   const blob = await canvasBlob(canvas, 0.86);
   const path = `${toyId}/${Date.now()}.jpg`;
   const { error } = await supabase.storage.from('toys').upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' });
@@ -67,6 +67,7 @@ export async function addToyFromPhoto(file, options, onStep = () => {}) {
     const fields = {
       name: (options.labels && labels.name) || nameFromFile(file.name) || labels?.name || 'Unnamed toy',
       tagline: labels?.tagline || null,
+      focus: labels?.focus || null,
       audience: options.audience || labels?.audience || 'neutral',
       condition: options.condition || labels?.condition || 'used',
       category: labels?.category || null,
@@ -106,7 +107,7 @@ async function sourceImage(toy) {
 
 // Redraw the frame after the name, group or condition changed.
 export async function reframe(toy, changes) {
-  const fields = { name: toy.name, tagline: toy.tagline, audience: toy.audience, condition: toy.condition, ...changes };
+  const fields = { name: toy.name, tagline: toy.tagline, audience: toy.audience, condition: toy.condition, focus: toy.focus, ...changes };
   const image = await sourceImage(toy);
   const imagePath = await uploadFramed(toy.id, image, fields);
   const { data, error } = await supabase.from('toys').update({ ...changes, image_path: imagePath })
@@ -130,7 +131,7 @@ export async function replacePhoto(toy, file, { relabel = false } = {}) {
   if (relabel) {
     const labels = await askAI(image).catch(() => null);
     if (labels) {
-      changes = { ...changes, name: labels.name, tagline: labels.tagline || null, audience: labels.audience, condition: labels.condition,
+      changes = { ...changes, name: labels.name, tagline: labels.tagline || null, focus: labels.focus || null, audience: labels.audience, condition: labels.condition,
         category: labels.category, age_range: labels.age_range, brand: labels.brand || null,
         description: labels.description, ai_labels: labels };
     }

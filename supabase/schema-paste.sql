@@ -100,6 +100,7 @@ create index if not exists toys_status_idx on public.toys (status);
 create index if not exists toys_box_idx on public.toys (box_id);
 alter table public.toys add column if not exists legacy_id text;
 alter table public.toys add column if not exists tagline text;
+alter table public.toys add column if not exists focus jsonb;
 create sequence if not exists public.order_code_seq start 1001;
 create table if not exists public.orders (
 id uuid primary key default gen_random_uuid(),

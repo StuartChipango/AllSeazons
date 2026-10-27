@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   kwacha, waNumber, waLink, parcelSize, courierFee, orderMessage, priceBands, parseCsv, toCsv,
-  legacyRowToToy, nameFromFile, effectivePrice, isSpecial, deliveryLine, packLabels, labelKey,
+  legacyRowToToy, nameFromFile, effectivePrice, isSpecial, deliveryLine, packLabels, labelKey, parseFocus,
 } from '../assets/js/lib.js';
 
 test('kwacha amounts', () => {
@@ -128,5 +128,12 @@ test('a Claude pack opens, stored or deflated, and its labels match the photos',
 test('pack labels are cleaned up', () => {
   const labels = packLabels([{ File: 'a.png', Name: 'X', Audience: 'Unisex', Condition: 'NEW in box', 'Age range': '3 - 5', Price: 'K75' }, { name: 'no file' }]);
   assert.equal(labels.size, 1);
-  assert.deepEqual({ ...labels.get('a'), source: undefined }, { name: 'X', tagline: '', brand: '', audience: 'neutral', condition: 'new', category: '', age_range: '3-5', description: '', confidence: 'high', price: 75, source: undefined });
+  assert.deepEqual({ ...labels.get('a'), source: undefined }, { name: 'X', tagline: '', focus: null, brand: '', audience: 'neutral', condition: 'new', category: '', age_range: '3-5', description: '', confidence: 'high', price: 75, source: undefined });
+});
+
+test('focus boxes from a pack', () => {
+  assert.deepEqual(parseFocus('0.1, 0.2, 0.9, 0.8'), [0.1, 0.2, 0.9, 0.8]);
+  assert.deepEqual(parseFocus('10 20 90 80'), [0.1, 0.2, 0.9, 0.8]);
+  assert.equal(parseFocus('0.9,0.2,0.1,0.8'), null);
+  assert.equal(parseFocus(''), null);
 });

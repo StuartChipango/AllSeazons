@@ -56,6 +56,7 @@ Deno.serve(async (req) => {
     properties: {
       name: { type: "string" },
       tagline: { type: "string" },
+      focus: { type: "array", items: { type: "number" } },
       brand: { type: "string" },
       audience: { type: "string", enum: ["boys", "girls", "neutral"] },
       condition: { type: "string", enum: ["used", "new"] },
@@ -64,7 +65,7 @@ Deno.serve(async (req) => {
       description: { type: "string" },
       confidence: { type: "string", enum: ["high", "medium", "low"] },
     },
-    required: ["name", "tagline", "brand", "audience", "condition", "category", "age_range", "description", "confidence"],
+    required: ["name", "tagline", "focus", "brand", "audience", "condition", "category", "age_range", "description", "confidence"],
     additionalProperties: false,
   };
 
@@ -72,6 +73,7 @@ Deno.serve(async (req) => {
 
 - name: what a parent would search for, at most 32 characters, in Title Case. Include the brand or character when you can see it (for example "Barbie Camper Van", "Paw Patrol Chase", "Lego Duplo Train", "Wooden Shape Sorter"). If several pieces are a set, name the set.
 - tagline: an optional short line (at most 20 characters) shown small above the name, for a detail that does not fit in it, e.g. "Big & Small" over "Barbie Set", "Soft" over "Baby Plushy", "Pencil Set & Ball" over "Star Wars Set". Use "" when nothing useful.
+- focus: [left, top, right, bottom] of the box around every part of the toy, as fractions (0 to 1) of the photo width and height, a little generous rather than tight.
 - brand: the brand if visible or obvious, else "".
 - audience: "girls" or "boys" if the toy is clearly marketed that way in a typical toy shop, otherwise "neutral" (most blocks, puzzles, baby toys, educational and outdoor toys are neutral).
 - condition: "new" only if it is sealed or in its original unopened packaging; otherwise "used".

@@ -7,8 +7,8 @@
 const SIZE = 1080;
 // The see-through window in the frame files.
 const WIN = { x: 61, y: 56, w: 961, h: 898 };
-// Space kept around the photo inside the window.
-const GAP = 30;
+// Space kept between the toy and the edges of its area.
+const GAP = 36;
 
 // Bubble colour, big-name colour and tagline colour, as in the examples.
 const STYLE = {
@@ -102,16 +102,6 @@ export async function blobToBase64(blob) {
   return btoa(bin);
 }
 
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
 function font(weight, size, family) {
   return `${weight} ${size}px "${family}", "${FALLBACK}", "Trebuchet MS", sans-serif`;
 }
@@ -197,7 +187,41 @@ function drawName(ctx, { big, small, fonts, nameBase, tagBase, look, bubble, nam
   ctx.restore();
 }
 
-export async function renderFrame({ image, name, tagline = '', audience = 'neutral', condition = 'used', look = 'classic' }) {
+// focus: where the toy is in the photo, [left, top, right, bottom] as
+// fractions of the photo (Claude packs give one). Without it the middle 84%
+// is kept safe.
+export function cleanFocus(focus) {
+  const f = Array.isArray(focus) ? focus.map(Number) : null;
+  if (!f || f.length !== 4 || f.some((v) => !Number.isFinite(v))) return [0.08, 0.08, 0.92, 0.92];
+  const [l, t, r, b] = f.map((v) => Math.min(1, Math.max(0, v)));
+  return r - l < 0.05 || b - t < 0.05 ? [0.08, 0.08, 0.92, 0.92] : [l, t, r, b];
+}
+
+// The photo at its drawn size, faded out along the sides that end inside the
+// window so it melts into the blurred copy behind it.
+function softEdges(image, w, h, sides) {
+  const c = document.createElement('canvas');
+  c.width = Math.round(w);
+  c.height = Math.round(h);
+  const g = c.getContext('2d');
+  g.drawImage(image, 0, 0, c.width, c.height);
+  g.globalCompositeOperation = 'destination-out';
+  const F = 80;
+  const fade = (x0, y0, x1, y1, rx, ry, rw, rh) => {
+    const grad = g.createLinearGradient(x0, y0, x1, y1);
+    grad.addColorStop(0, 'rgba(0,0,0,1)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(rx, ry, rw, rh);
+  };
+  if (sides.left) fade(0, 0, F, 0, 0, 0, F, c.height);
+  if (sides.right) fade(c.width, 0, c.width - F, 0, c.width - F, 0, F, c.height);
+  if (sides.top) fade(0, 0, 0, F, 0, 0, c.width, F);
+  if (sides.bottom) fade(0, c.height, 0, c.height - F, 0, c.height - F, c.width, F);
+  return c;
+}
+
+export async function renderFrame({ image, name, tagline = '', audience = 'neutral', condition = 'used', look = 'classic', focus = null }) {
   const fonts = await loadFrameFonts();
   const style = STYLE[audience] ? audience : 'neutral';
   const isNew = condition === 'new';
@@ -224,38 +248,51 @@ export async function renderFrame({ image, name, tagline = '', audience = 'neutr
   const tagBase = nameBase - big.size * 0.86;
   const textTop = small ? tagBase - small.size * 0.78 - 26 : nameBase - big.size * 0.78 - 26;
 
-  // Behind the photo: a soft, blurred copy filling the window.
+  // Photo: the toy (focus box) is centred in the space above the name with
+  // the same gap on every side, and the photo around it fills the window.
+  // Only background is ever cut off. If the toy is too big for that, the photo
+  // shrinks and a blurred copy of it fills the rest, so nothing is left empty.
   const [iw, ih] = dims(image);
   const cover = Math.max(WIN.w / iw, WIN.h / ih);
+  const area = { x: WIN.x + GAP, y: WIN.y + GAP, w: WIN.w - GAP * 2, h: textTop - GAP - (WIN.y + GAP) };
+  const [fl, ft, fr, fb] = cleanFocus(focus);
+  const fw = (fr - fl) * iw;
+  const fh = (fb - ft) * ih;
+  const scale = Math.min(area.w / fw, area.h / fh, cover * 2.2);
+  const dw = iw * scale;
+  const dh = ih * scale;
+  const place = (start, size, drawn, focusMid, areaMid) => {
+    const centred = areaMid - focusMid * drawn;
+    if (drawn < size) return centred;
+    return Math.min(start, Math.max(start + size - drawn, centred));
+  };
+  let dx = place(WIN.x, WIN.w, dw, (fl + fr) / 2, area.x + area.w / 2);
+  let dy = place(WIN.y, WIN.h, dh, (ft + fb) / 2, area.y + area.h / 2);
+  // Keeping the window filled must not push the toy out of its space.
+  const fits = (x0, y0) => x0 + fl * dw >= area.x - 1 && x0 + fr * dw <= area.x + area.w + 1
+    && y0 + ft * dh >= area.y - 1 && y0 + fb * dh <= area.y + area.h + 1;
+  if (!fits(dx, dy)) {
+    dx = area.x + area.w / 2 - ((fl + fr) / 2) * dw;
+    dy = area.y + area.h / 2 - ((ft + fb) / 2) * dh;
+  }
   ctx.save();
   ctx.beginPath();
   ctx.rect(WIN.x - 4, WIN.y - 4, WIN.w + 8, WIN.h + 8);
   ctx.clip();
-  if ('filter' in ctx) ctx.filter = 'blur(30px)';
-  ctx.drawImage(image, WIN.x + (WIN.w - iw * cover) / 2, WIN.y + (WIN.h - ih * cover) / 2, iw * cover, ih * cover);
-  ctx.filter = 'none';
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  ctx.fillRect(WIN.x, WIN.y, WIN.w, WIN.h);
-  ctx.restore();
-
-  // The whole photo, never cropped, with the same space on every side of the
-  // area above the name.
-  const area = { x: WIN.x + GAP, y: WIN.y + GAP, w: WIN.w - GAP * 2, h: textTop - GAP - (WIN.y + GAP) };
-  const fitScale = Math.min(area.w / iw, area.h / ih);
-  const pw = iw * fitScale;
-  const ph = ih * fitScale;
-  const px = area.x + (area.w - pw) / 2;
-  const py = area.y + (area.h - ph) / 2;
-  ctx.save();
-  ctx.shadowColor = 'rgba(0,0,0,0.18)';
-  ctx.shadowBlur = 18;
-  ctx.shadowOffsetY = 6;
-  roundRect(ctx, px, py, pw, ph, 22);
-  ctx.fillStyle = '#fff';
-  ctx.fill();
-  ctx.shadowColor = 'transparent';
-  ctx.clip();
-  ctx.drawImage(image, px, py, pw, ph);
+  const gaps = dx > WIN.x + 0.5 || dy > WIN.y + 0.5 || dx + dw < WIN.x + WIN.w - 0.5 || dy + dh < WIN.y + WIN.h - 0.5;
+  if (gaps) {
+    // Gaps: a strongly blurred copy of the same photo fills the window, and
+    // the sharp photo melts into it, so the colours carry on behind the toy.
+    const bs = Math.max(cover, dw / iw) * 1.15;
+    if ('filter' in ctx) ctx.filter = 'blur(36px) saturate(1.05)';
+    ctx.drawImage(image, dx + dw / 2 - (iw * bs) / 2, dy + dh / 2 - (ih * bs) / 2, iw * bs, ih * bs);
+    ctx.filter = 'none';
+    ctx.drawImage(softEdges(image, dw, dh, {
+      left: dx > WIN.x, top: dy > WIN.y, right: dx + dw < WIN.x + WIN.w, bottom: dy + dh < WIN.y + WIN.h,
+    }), dx, dy);
+  } else {
+    ctx.drawImage(image, dx, dy, dw, dh);
+  }
   ctx.restore();
 
   ctx.drawImage(frame, 0, 0, SIZE, SIZE);

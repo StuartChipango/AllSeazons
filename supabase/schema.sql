@@ -135,6 +135,9 @@ create index if not exists toys_box_idx on public.toys (box_id);
 alter table public.toys add column if not exists legacy_id text;
 -- Small line above the name on the picture ("Big & Small" over "Barbie Set").
 alter table public.toys add column if not exists tagline text;
+-- Where the toy is in the photo, [left, top, right, bottom] as fractions,
+-- so the frame can fill the window without cutting the toy.
+alter table public.toys add column if not exists focus jsonb;
 
 -- ---------------------------------------------------------------------
 -- Orders.
