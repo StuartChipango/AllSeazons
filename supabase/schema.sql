@@ -133,6 +133,8 @@ create table if not exists public.toys (
 create index if not exists toys_status_idx on public.toys (status);
 create index if not exists toys_box_idx on public.toys (box_id);
 alter table public.toys add column if not exists legacy_id text;
+-- Small line above the name on the picture ("Big & Small" over "Barbie Set").
+alter table public.toys add column if not exists tagline text;
 
 -- ---------------------------------------------------------------------
 -- Orders.

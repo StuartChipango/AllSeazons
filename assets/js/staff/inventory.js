@@ -180,6 +180,7 @@ function edit(t) {
       ${t.status === 'available' ? '<button class="btn ghost small" id="sellOne">Sell in shop</button>' : ''}
     </div>
     <form id="editForm">
+      <label class="field"><span>Small top line on the picture (optional)</span><input type="text" name="tagline" maxlength="30" value="${esc(t.tagline || '')}"></label>
       <label class="field"><span>Name</span><input type="text" name="name" maxlength="40" required value="${esc(t.name)}"></label>
       <div class="field"><span>Boys, girls or neutral</span>${seg('audience', t.audience, [['boys', 'Boys'], ['girls', 'Girls'], ['neutral', 'Neutral']])}</div>
       <div class="field"><span>Condition</span>${seg('condition', t.condition, [['used', 'Used'], ['new', 'New']])}</div>
@@ -217,6 +218,7 @@ function edit(t) {
     const num = (k) => (f.get(k) === '' || f.get(k) === null ? null : parseInt(f.get(k), 10));
     const changes = {
       name: String(f.get('name')).trim(),
+      tagline: String(f.get('tagline') || '').trim() || null,
       audience: segVals.audience,
       condition: segVals.condition,
       price: num('price') ?? t.price,
@@ -236,7 +238,7 @@ function edit(t) {
     const btn = e.submitter;
     busy(btn, true, 'Saving…');
     try {
-      const reframeNeeded = ['name', 'audience', 'condition'].some((k) => changes[k] !== t[k]) && t.raw_path;
+      const reframeNeeded = ['name', 'tagline', 'audience', 'condition'].some((k) => (changes[k] ?? null) !== (t[k] ?? null)) && t.raw_path;
       if (reframeNeeded) await reframe(t, changes);
       else {
         const { error } = await supabase.from('toys').update(changes).eq('id', t.id);
@@ -280,7 +282,7 @@ function edit(t) {
 }
 
 function exportCsv() {
-  const cols = ['code', 'name', 'audience', 'condition', 'category', 'age_range', 'brand', 'price', 'sale_price', 'is_special',
+  const cols = ['code', 'tagline', 'name', 'audience', 'condition', 'category', 'age_range', 'brand', 'price', 'sale_price', 'is_special',
     'quantity', 'status', 'box_id', 'sold_count', 'created_at', 'approved_at', 'sold_at', 'legacy_id', 'description'];
   download(`all-seazons-stock-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(toys.filter(matches), cols));
 }

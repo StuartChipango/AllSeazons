@@ -55,6 +55,7 @@ Deno.serve(async (req) => {
     type: "object",
     properties: {
       name: { type: "string" },
+      tagline: { type: "string" },
       brand: { type: "string" },
       audience: { type: "string", enum: ["boys", "girls", "neutral"] },
       condition: { type: "string", enum: ["used", "new"] },
@@ -63,13 +64,14 @@ Deno.serve(async (req) => {
       description: { type: "string" },
       confidence: { type: "string", enum: ["high", "medium", "low"] },
     },
-    required: ["name", "brand", "audience", "condition", "category", "age_range", "description", "confidence"],
+    required: ["name", "tagline", "brand", "audience", "condition", "category", "age_range", "description", "confidence"],
     additionalProperties: false,
   };
 
   const prompt = `You label toys for All Seazons Play, a toy shop in Zambia that sells mostly pre-loved (second-hand) toys and some new ones. Look at the photo and describe the main toy.
 
 - name: what a parent would search for, at most 32 characters, in Title Case. Include the brand or character when you can see it (for example "Barbie Camper Van", "Paw Patrol Chase", "Lego Duplo Train", "Wooden Shape Sorter"). If several pieces are a set, name the set.
+- tagline: an optional short line (at most 20 characters) shown small above the name, for a detail that does not fit in it, e.g. "Big & Small" over "Barbie Set", "Soft" over "Baby Plushy", "Pencil Set & Ball" over "Star Wars Set". Use "" when nothing useful.
 - brand: the brand if visible or obvious, else "".
 - audience: "girls" or "boys" if the toy is clearly marketed that way in a typical toy shop, otherwise "neutral" (most blocks, puzzles, baby toys, educational and outdoor toys are neutral).
 - condition: "new" only if it is sealed or in its original unopened packaging; otherwise "used".
@@ -102,6 +104,7 @@ Deno.serve(async (req) => {
     if (!text || text.type !== "text") return json({ error: "No label came back." }, 502);
     const labels = JSON.parse(text.text);
     labels.name = String(labels.name ?? "").trim().slice(0, 40) || "Unnamed toy";
+    labels.tagline = String(labels.tagline ?? "").trim().slice(0, 30);
     return json({ labels });
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) return json({ error: "Too many photos at once. Try again in a minute." }, 429);

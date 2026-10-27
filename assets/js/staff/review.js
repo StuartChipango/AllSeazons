@@ -28,6 +28,7 @@ function card(t) {
       <div class="body">
         ${t.image_path ? '' : '<label class="btn soft small">Add a photo<input type="file" accept="image/*" data-f="photo" hidden></label>'}
         ${flag ? `<div class="flag">${flag}</div>` : ''}
+        <label class="field"><span>Small top line (optional)</span><input type="text" data-f="tagline" value="${esc(t.tagline || '')}" maxlength="30" placeholder="e.g. Big &amp; Small"></label>
         <label class="field"><span>Name</span><input type="text" data-f="name" value="${esc(t.name)}" maxlength="40"></label>
         ${seg('audience', t.audience, [['boys', 'Boys'], ['girls', 'Girls'], ['neutral', 'Neutral']])}
         ${seg('condition', t.condition, [['used', 'Used'], ['new', 'New']])}
@@ -61,7 +62,7 @@ function render() {
 function find(id) { return toys.find((t) => t.id === id); }
 
 async function save(t, changes, el) {
-  const needsFrame = ['name', 'audience', 'condition'].some((k) => k in changes && changes[k] !== t[k]);
+  const needsFrame = ['name', 'tagline', 'audience', 'condition'].some((k) => k in changes && changes[k] !== t[k]);
   const cardEl = el.closest('.rcard');
   const pic = cardEl.querySelector('.pic');
   try {
@@ -105,6 +106,9 @@ function wire() {
     el.querySelector('[data-f="name"]').addEventListener('change', (e) => {
       const name = e.target.value.trim();
       if (name) save(t, { name }, e.target);
+    });
+    el.querySelector('[data-f="tagline"]').addEventListener('change', (e) => {
+      save(t, { tagline: e.target.value.trim() || null }, e.target);
     });
     $$('[data-seg]', el).forEach((b) => b.addEventListener('click', () => {
       if (t[b.dataset.seg] === b.dataset.value) return;

@@ -216,6 +216,7 @@ test('a Claude pack adds named toys without the AI', async () => {
   await pony.waitFor();
   await tractor.waitFor();
   assert.equal(await pony.locator('[data-seg=audience][data-value=girls]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await pony.locator('[data-f=tagline]').inputValue(), 'With Pony');
   assert.equal(await tractor.locator('[data-seg=condition][data-value=new]').getAttribute('aria-pressed'), 'true');
   const prices = await staff.locator('.rcard [data-f=price]').evaluateAll((els) => els.map((e) => e.value));
   assert.deepEqual(prices.sort(), ['100', '50']);

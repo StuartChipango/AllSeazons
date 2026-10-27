@@ -7,11 +7,12 @@ Claude names the toys in chat, writes the labels to a JSON file, and runs:
 
 labels.json is a list, one entry per photo, in this shape:
 
-    [{"photo": "/path/to/photo", "name": "Barbie Camper Van", "brand": "Barbie",
+    [{"photo": "/path/to/photo", "tagline": "Pop-up Roof", "name": "Barbie Camper Van", "brand": "Barbie",
       "audience": "girls", "condition": "used", "category": "Dolls & Accessories",
       "age_range": "3-5", "description": "A pink camper with pop-up roof.",
       "price": 75, "confidence": "high"}]
 
+tagline is the small thin line above the name on the picture ("" for none).
 price is optional (blank = the price picked on the Add toys page).
 The pack holds the photos as 001.jpg, 002.jpg... plus labels.csv. In the
 staff app: Add toys > Add a Claude pack > pick the .zip.
@@ -24,7 +25,7 @@ AGES = {"0-2", "3-5", "6-8", "9+"}
 CATEGORIES = {"Dolls & Accessories", "Cars & Vehicles", "Building & Blocks", "Soft Toys",
               "Baby & Toddler", "Puzzles & Games", "Action Figures", "Pretend Play",
               "Learning Toys", "Outdoor & Sports", "Books", "Other"}
-COLUMNS = ["file", "name", "brand", "audience", "condition", "category", "age_range",
+COLUMNS = ["file", "tagline", "name", "brand", "audience", "condition", "category", "age_range",
            "description", "price", "confidence"]
 
 
@@ -51,6 +52,7 @@ def main(labels_path, out_path):
             row = {c: item.get(c, "") for c in COLUMNS}
             row["file"] = file
             row["name"] = str(row["name"]).strip()[:40] or "Unnamed toy"
+            row["tagline"] = str(row["tagline"] or "").strip()[:30]
             if row["audience"] not in AUDIENCES:
                 problems.append(f"{file}: audience {row['audience']!r} is not boys/girls/neutral")
             if row["condition"] not in {"used", "new"}:

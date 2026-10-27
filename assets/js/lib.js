@@ -211,6 +211,7 @@ export function packLabels(rows) {
     const price = parseInt(get('price').replace(/[^\d]/g, ''), 10);
     map.set(key, {
       name: get('name').slice(0, 40) || 'Unnamed toy',
+      tagline: get('tagline').slice(0, 30),
       brand: get('brand'),
       audience: ['boys', 'girls', 'neutral'].includes(audience) ? audience : 'neutral',
       condition: condition.startsWith('new') ? 'new' : 'used',

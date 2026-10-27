@@ -117,6 +117,7 @@ test('a Claude pack opens, stored or deflated, and its labels match the photos',
     const labels = packLabels(parseCsv(csv));
     assert.equal(labels.get(labelKey('IMG/001.JPG')).name, 'Pink Pony Stable');
     assert.equal(labels.get('001').price, 100);
+    assert.equal(labels.get('001').tagline, 'With Pony');
     assert.equal(labels.get('002').price, null);
     assert.equal(labels.get('002').condition, 'new');
     const jpg = new Uint8Array(await files.find((f) => f.name === '001.jpg').blob.arrayBuffer());
@@ -127,5 +128,5 @@ test('a Claude pack opens, stored or deflated, and its labels match the photos',
 test('pack labels are cleaned up', () => {
   const labels = packLabels([{ File: 'a.png', Name: 'X', Audience: 'Unisex', Condition: 'NEW in box', 'Age range': '3 - 5', Price: 'K75' }, { name: 'no file' }]);
   assert.equal(labels.size, 1);
-  assert.deepEqual({ ...labels.get('a'), source: undefined }, { name: 'X', brand: '', audience: 'neutral', condition: 'new', category: '', age_range: '3-5', description: '', confidence: 'high', price: 75, source: undefined });
+  assert.deepEqual({ ...labels.get('a'), source: undefined }, { name: 'X', tagline: '', brand: '', audience: 'neutral', condition: 'new', category: '', age_range: '3-5', description: '', confidence: 'high', price: 75, source: undefined });
 });
