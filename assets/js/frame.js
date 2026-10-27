@@ -7,6 +7,8 @@
 const SIZE = 1080;
 // The see-through window in the frame files.
 const WIN = { x: 61, y: 56, w: 961, h: 898 };
+// Space kept around the photo inside the window.
+const GAP = 30;
 
 // Bubble colour, big-name colour and tagline colour, as in the examples.
 const STYLE = {
@@ -98,6 +100,16 @@ export async function blobToBase64(blob) {
   let bin = '';
   for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
   return btoa(bin);
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
 
 function font(weight, size, family) {
@@ -212,18 +224,38 @@ export async function renderFrame({ image, name, tagline = '', audience = 'neutr
   const tagBase = nameBase - big.size * 0.86;
   const textTop = small ? tagBase - small.size * 0.78 - 26 : nameBase - big.size * 0.78 - 26;
 
-  // Photo: fills the window, centred on the part the name doesn't cover.
+  // Behind the photo: a soft, blurred copy filling the window.
   const [iw, ih] = dims(image);
-  const scale = Math.max(WIN.w / iw, WIN.h / ih);
-  const dw = iw * scale;
-  const dh = ih * scale;
-  const visibleMid = (WIN.y + Math.min(WIN.y + WIN.h, textTop)) / 2;
-  const dy = Math.min(WIN.y, Math.max(WIN.y + WIN.h - dh, visibleMid - dh / 2));
+  const cover = Math.max(WIN.w / iw, WIN.h / ih);
   ctx.save();
   ctx.beginPath();
   ctx.rect(WIN.x - 4, WIN.y - 4, WIN.w + 8, WIN.h + 8);
   ctx.clip();
-  ctx.drawImage(image, WIN.x + (WIN.w - dw) / 2, dy, dw, dh);
+  if ('filter' in ctx) ctx.filter = 'blur(30px)';
+  ctx.drawImage(image, WIN.x + (WIN.w - iw * cover) / 2, WIN.y + (WIN.h - ih * cover) / 2, iw * cover, ih * cover);
+  ctx.filter = 'none';
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.fillRect(WIN.x, WIN.y, WIN.w, WIN.h);
+  ctx.restore();
+
+  // The whole photo, never cropped, with the same space on every side of the
+  // area above the name.
+  const area = { x: WIN.x + GAP, y: WIN.y + GAP, w: WIN.w - GAP * 2, h: textTop - GAP - (WIN.y + GAP) };
+  const fitScale = Math.min(area.w / iw, area.h / ih);
+  const pw = iw * fitScale;
+  const ph = ih * fitScale;
+  const px = area.x + (area.w - pw) / 2;
+  const py = area.y + (area.h - ph) / 2;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.18)';
+  ctx.shadowBlur = 18;
+  ctx.shadowOffsetY = 6;
+  roundRect(ctx, px, py, pw, ph, 22);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.clip();
+  ctx.drawImage(image, px, py, pw, ph);
   ctx.restore();
 
   ctx.drawImage(frame, 0, 0, SIZE, SIZE);
