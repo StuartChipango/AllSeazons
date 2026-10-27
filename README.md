@@ -21,6 +21,7 @@ assets/js/staff/*.js          staff app pages
 assets/vendor/supabase.js     supabase-js 2.45.4, bundled
 supabase/schema.sql           tables, stock functions, security rules, storage
 supabase/functions/label-toy  AI labelling function
+tools/make_pack.py            builds a "Claude pack" (photos + labels.csv) when naming is done in chat
 tests/                        unit, database and end-to-end tests
 ```
 

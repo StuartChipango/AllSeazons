@@ -1,4 +1,5 @@
-import { esc, kwacha } from '../lib.js';
+import { esc, kwacha, parseCsv, packLabels, labelKey } from '../lib.js';
+import { readZip } from '../unzip.js';
 import { friendlyError } from '../db.js';
 import { shared, refreshBadges } from './app.js';
 import { $, $$, seg } from './ui.js';
@@ -9,6 +10,7 @@ const jobs = [];
 let running = 0;
 let root = null;
 const PARALLEL = 2;
+let notice = null;
 
 export async function show(main) {
   root = main;
@@ -49,8 +51,11 @@ function render() {
       <div class="row-actions" style="justify-content:center">
         <label class="btn">Choose photos<input type="file" id="files" accept="image/jpeg,image/png,image/webp,image/*" multiple hidden></label>
         <label class="btn ghost">Choose a folder<input type="file" id="folder" webkitdirectory multiple hidden></label>
+        <label class="btn ghost">Add a Claude pack<input type="file" id="pack" accept=".zip,.csv,application/zip,text/csv,image/*" multiple hidden></label>
       </div>
+      <p style="font-size:13px;color:var(--muted)">Claude pack: the .zip Claude makes from your photos in chat, with names and groups already filled in. You can also drop photos together with their labels.csv.</p>
     </div>
+    ${notice ? `<p class="${notice.bad ? 'st bad' : 'st ok'}" role="status" style="margin-top:10px">${esc(notice.text)}</p>` : ''}
 
     ${jobs.length ? `
       <div class="page-head" style="margin-top:18px"><h2 style="margin-right:auto">This session: ${done} of ${jobs.length} ready</h2>
@@ -74,21 +79,49 @@ function wire() {
   const drop = $('#drop', root);
   $('#files', root).onchange = (e) => addFiles(e.target.files);
   $('#folder', root).onchange = (e) => addFiles(e.target.files);
+  $('#pack', root).onchange = (e) => addFiles(e.target.files);
   drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); };
   drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') $('#files', root).click(); };
 }
 
-function addFiles(list) {
-  const files = [...list].filter((f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|heic)$/i.test(f.name));
+const isImage = (f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|heic)$/i.test(f.name);
+
+// Photos, plus any Claude pack (.zip) or labels.csv that came with them.
+async function addFiles(list) {
+  let files = [...list];
+  let labels = new Map();
+  notice = null;
+  try {
+    for (const zip of files.filter((f) => /\.zip$/i.test(f.name))) {
+      for (const entry of await readZip(zip)) {
+        if (/\.csv$/i.test(entry.name)) labels = new Map([...labels, ...packLabels(parseCsv(await entry.blob.text()))]);
+        else if (/\.(jpe?g|png|webp)$/i.test(entry.name)) {
+          const type = /\.png$/i.test(entry.name) ? 'image/png' : /\.webp$/i.test(entry.name) ? 'image/webp' : 'image/jpeg';
+          files.push(new File([entry.blob], entry.name, { type }));
+        }
+      }
+    }
+    for (const csv of files.filter((f) => /\.csv$/i.test(f.name))) {
+      labels = new Map([...labels, ...packLabels(parseCsv(await csv.text()))]);
+    }
+  } catch (e) {
+    notice = { bad: true, text: 'Could not open the Claude pack: ' + e.message };
+  }
+  files = files.filter(isImage);
+  if (labels.size) {
+    const missing = files.filter((f) => !labels.has(labelKey(f.name))).length;
+    notice = { bad: !!missing, text: `${files.length - missing} photo${files.length - missing === 1 ? '' : 's'} named by Claude.`
+      + (missing ? ` ${missing} had no line in labels.csv and will be named by the AI or left as "Unnamed toy".` : '') };
+  }
   for (const file of files) {
     jobs.unshift({
       file,
       thumb: URL.createObjectURL(file),
       state: 'waiting',
       step: 'Waiting',
-      options: { ...opts },
+      options: { ...opts, labels: labels.get(labelKey(file.name)) || null },
     });
   }
   render();

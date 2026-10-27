@@ -32,7 +32,8 @@ async function uploadFramed(toyId, image, fields) {
 }
 
 // One new photo -> one toy waiting on the Review page.
-// options: price, box_id, audience/condition ('' = let the AI decide).
+// options: price, box_id, audience/condition ('' = let the AI decide),
+// labels (from a Claude pack: used instead of asking the AI).
 export async function addToyFromPhoto(file, options, onStep = () => {}) {
   onStep('Preparing photo');
   const image = await loadBitmap(file);
@@ -40,7 +41,7 @@ export async function addToyFromPhoto(file, options, onStep = () => {}) {
 
   const { data: toy, error } = await supabase.from('toys').insert({
     status: 'review',
-    price: options.price,
+    price: options.labels?.price || options.price,
     box_id: options.box_id || null,
     name: 'New toy',
   }).select().single();
@@ -51,17 +52,20 @@ export async function addToyFromPhoto(file, options, onStep = () => {}) {
     const up = await supabase.storage.from('raw').upload(rawPath, raw, { contentType: 'image/jpeg', upsert: true });
     if (up.error) throw up.error;
 
-    onStep('AI is naming the toy');
-    let labels = null;
+    // Labels from a Claude pack come with the photo; otherwise ask the AI.
+    let labels = options.labels || null;
     let aiError = '';
-    try {
-      labels = await askAI(image);
-    } catch (e) {
-      aiError = e.message;
+    if (!labels) {
+      onStep('AI is naming the toy');
+      try {
+        labels = await askAI(image);
+      } catch (e) {
+        aiError = e.message;
+      }
     }
 
     const fields = {
-      name: nameFromFile(file.name) || labels?.name || 'Unnamed toy',
+      name: (options.labels && labels.name) || nameFromFile(file.name) || labels?.name || 'Unnamed toy',
       audience: options.audience || labels?.audience || 'neutral',
       condition: options.condition || labels?.condition || 'used',
       category: labels?.category || null,

@@ -203,6 +203,26 @@ test('staff home shows the week and what sells', async () => {
   await shot(staff, '10-home');
 });
 
+test('a Claude pack adds named toys without the AI', async () => {
+  await staff.goto(`${h.url}/staff/#upload`);
+  await staff.getByRole('button', { name: 'K50', exact: true }).click();
+  await staff.setInputFiles('#pack', [fileURLToPath(new URL('./fixtures/claude-pack.zip', import.meta.url))]);
+  await staff.getByText('2 photos named by Claude.').waitFor();
+  await staff.getByText('2 of 2 ready').waitFor({ timeout: 30000 });
+  await shot(staff, '11-pack');
+  await staff.goto(`${h.url}/staff/#review`);
+  const pony = staff.locator('.rcard', { has: staff.locator('[data-f=name][value="Pink Pony Stable"]') });
+  const tractor = staff.locator('.rcard', { has: staff.locator('[data-f=name][value="Green Tractor"]') });
+  await pony.waitFor();
+  await tractor.waitFor();
+  assert.equal(await pony.locator('[data-seg=audience][data-value=girls]').getAttribute('aria-pressed'), 'true');
+  assert.equal(await tractor.locator('[data-seg=condition][data-value=new]').getAttribute('aria-pressed'), 'true');
+  const prices = await staff.locator('.rcard [data-f=price]').evaluateAll((els) => els.map((e) => e.value));
+  assert.deepEqual(prices.sort(), ['100', '50']);
+  await pony.locator('.pic img').evaluate((i) => i.complete || new Promise((r) => { i.onload = r; }));
+  assert.equal(await pony.locator('.pic img').evaluate((i) => i.naturalWidth), 1080);
+});
+
 test('no browser errors along the way', () => {
   assert.deepEqual(errors, []);
 });

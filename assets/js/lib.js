@@ -194,3 +194,33 @@ export function nameFromFile(filename) {
   if (/^(img|dsc|dcim|pxl|photo|image|whatsapp|screenshot|snapchat|signal|fb|mvimg|wp|picture)\b/i.test(base)) return '';
   return base.replace(/\s+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 40);
 }
+
+// Labels made by Claude in a chat (labels.csv in a "Claude pack"), keyed by
+// photo file name without folder or extension, lower case.
+export const labelKey = (filename) => String(filename || '').split(/[\\/]/).pop().replace(/\.[^.]+$/, '').trim().toLowerCase();
+
+export function packLabels(rows) {
+  const map = new Map();
+  for (const r of rows) {
+    const get = (k) => String(r[Object.keys(r).find((h) => h.toLowerCase().replace(/[^a-z]/g, '') === k) ?? ''] ?? '').trim();
+    const key = labelKey(get('file') || get('filename') || get('photo'));
+    if (!key) continue;
+    const audience = get('audience').toLowerCase();
+    const condition = get('condition').toLowerCase();
+    const age = get('agerange').replace(/\s/g, '');
+    const price = parseInt(get('price').replace(/[^\d]/g, ''), 10);
+    map.set(key, {
+      name: get('name').slice(0, 40) || 'Unnamed toy',
+      brand: get('brand'),
+      audience: ['boys', 'girls', 'neutral'].includes(audience) ? audience : 'neutral',
+      condition: condition.startsWith('new') ? 'new' : 'used',
+      category: get('category'),
+      age_range: AGES.includes(age) ? age : '',
+      description: get('description'),
+      confidence: ['high', 'medium', 'low'].includes(get('confidence').toLowerCase()) ? get('confidence').toLowerCase() : 'high',
+      price: price > 0 ? price : null,
+      source: 'claude-pack',
+    });
+  }
+  return map;
+}

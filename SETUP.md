@@ -26,6 +26,17 @@ About 30 minutes, once. You need: an email address, a card for the Anthropic acc
 
 If labelling is not set up yet, uploads still work: toys arrive on the Review page as "Unnamed toy" for you to name.
 
+### No Anthropic key? Name the photos with Claude in chat instead
+
+This uses your normal Claude account, so there is nothing to pay for per photo.
+
+1. In your Claude project, send the toy photos in a chat and ask Claude to "make a Claude pack" (say the price if the whole batch has one).
+2. Claude looks at each photo, names it, picks boys/girls/neutral, used/new, category and age, and sends back a `.zip` file (the photos plus `labels.csv`).
+3. Download the `.zip`. In the staff app open **Add toys → Add a Claude pack** and pick it.
+4. The frames are drawn and the toys land on **Review**, already named. Fix anything wrong and **Approve**.
+
+You can also drop photos together with a `labels.csv` (columns `file,name,brand,audience,condition,category,age_range,description,price`). `price` can be left blank to use the price picked on the page. Claude makes packs with [`tools/make_pack.py`](tools/make_pack.py).
+
 ## 3. Put the website online (GitHub Pages)
 
 The site is plain files, so GitHub Pages hosts it for free.
