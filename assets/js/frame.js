@@ -126,19 +126,66 @@ export function splitName(text) {
   return [words.slice(0, cut).join(' '), words.slice(cut).join(' ')];
 }
 
-// Text with a fat rounded outline in the bubble colour: neighbouring letters
-// and lines merge into the bumpy bubble of the brand examples.
-function bubbleText(ctx, text, x, y, fill, bubble, pad) {
+function drawName(ctx, { big, small, fonts, nameBase, tagBase, look, bubble, nameColor, tagColor }) {
+  const bigFont = font(700, big.size, fonts.bold);
+  const smallFont = small && font(300, small.size, fonts.thin);
+  ctx.save();
+  ctx.textAlign = 'center';
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  ctx.lineWidth = pad * 2;
+  let tagX = SIZE / 2;
+  if (look === 'tilt') {
+    ctx.translate(SIZE / 2, nameBase - big.size / 2);
+    ctx.rotate(-0.06);
+    ctx.translate(-SIZE / 2, -(nameBase - big.size / 2));
+    if (small) {
+      ctx.font = bigFont;
+      const bigLeft = SIZE / 2 - ctx.measureText(big.text).width / 2;
+      ctx.font = smallFont;
+      tagX = Math.max(80 + ctx.measureText(small.text).width / 2, bigLeft + 20 + ctx.measureText(small.text).width / 2);
+    }
+  }
+  // 1. Bubble: fat outlines of both lines in the frame colour, over a solid
+  // band so no photo peeks through between letters.
   ctx.strokeStyle = bubble;
-  ctx.strokeText(text, x, y);
-  ctx.fillStyle = fill;
-  ctx.fillText(text, x, y);
+  ctx.fillStyle = bubble;
+  const band = (text, x, base, size, f) => {
+    ctx.font = f;
+    const w = ctx.measureText(text).width;
+    ctx.fillRect(x - w / 2, base - size * 0.78, w, size * 0.78);
+    ctx.lineWidth = 64;
+    ctx.strokeText(text, x, base);
+    return [x - w / 2, x + w / 2];
+  };
+  const [bl, br] = band(big.text, SIZE / 2, nameBase, big.size, bigFont);
+  if (small) {
+    const [sl, sr] = band(small.text, tagX, tagBase, small.size, smallFont);
+    const l = Math.max(bl, sl);
+    const r = Math.min(br, sr);
+    if (r > l) ctx.fillRect(l, tagBase - small.size * 0.5, r - l, nameBase - tagBase);
+  }
+  // 2. Big name, thickened a little like the examples.
+  ctx.font = bigFont;
+  if (look === 'pop') {
+    ctx.lineWidth = 14;
+    ctx.strokeStyle = tagColor;
+    ctx.strokeText(big.text, SIZE / 2, nameBase);
+  }
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = nameColor;
+  ctx.strokeText(big.text, SIZE / 2, nameBase);
+  ctx.fillStyle = nameColor;
+  ctx.fillText(big.text, SIZE / 2, nameBase);
+  // 3. Small line on top.
+  if (small) {
+    ctx.font = smallFont;
+    ctx.fillStyle = tagColor;
+    ctx.fillText(small.text, tagX, tagBase);
+  }
+  ctx.restore();
 }
 
-export async function renderFrame({ image, name, tagline = '', audience = 'neutral', condition = 'used' }) {
+export async function renderFrame({ image, name, tagline = '', audience = 'neutral', condition = 'used', look = 'classic' }) {
   const fonts = await loadFrameFonts();
   const style = STYLE[audience] ? audience : 'neutral';
   const isNew = condition === 'new';
@@ -159,8 +206,8 @@ export async function renderFrame({ image, name, tagline = '', audience = 'neutr
   let sub = String(tagline || '').trim();
   // A long name with no tagline: move its first words up to the thin line.
   if (!sub && fit(ctx, title, 900, 150, 110, 700, fonts.bold).text !== title) [sub, title] = splitName(title);
-  const big = fit(ctx, title, 900, 150, 70, 700, fonts.bold);
-  const small = sub ? fit(ctx, sub, 760, 96, 52, 300, fonts.thin) : null;
+  const big = fit(ctx, title, 900, 172, 70, 700, fonts.bold);
+  const small = sub ? fit(ctx, sub, 760, 104, 52, 300, fonts.thin) : null;
   const nameBase = 1000;
   const tagBase = nameBase - big.size * 0.86;
   const textTop = small ? tagBase - small.size * 0.78 - 26 : nameBase - big.size * 0.78 - 26;
@@ -194,24 +241,6 @@ export async function renderFrame({ image, name, tagline = '', audience = 'neutr
     ctx.restore();
   }
 
-  // Name bubble.
-  ctx.font = font(700, big.size, fonts.bold);
-  if (small) {
-    // Draw both outlines before either fill so the lines join into one bubble.
-    ctx.save();
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 64;
-    ctx.strokeStyle = bubble;
-    ctx.font = font(300, small.size, fonts.thin);
-    ctx.strokeText(small.text, SIZE / 2, tagBase);
-    ctx.restore();
-    ctx.font = font(700, big.size, fonts.bold);
-    bubbleText(ctx, big.text, SIZE / 2, nameBase, nameColor, bubble, 32);
-    ctx.font = font(300, small.size, fonts.thin);
-    ctx.fillStyle = tagColor;
-    ctx.fillText(small.text, SIZE / 2, tagBase);
-  } else {
-    bubbleText(ctx, big.text, SIZE / 2, nameBase, nameColor, bubble, 32);
-  }
+  drawName(ctx, { big, small, fonts, nameBase, tagBase, look, bubble, nameColor, tagColor });
   return c;
 }
