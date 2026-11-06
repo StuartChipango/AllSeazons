@@ -17,7 +17,11 @@ About 30 minutes, once. You need: an email address, a card for the Anthropic acc
 5. Stop strangers from signing up: **Authentication → Sign In / Providers**, turn off **Allow new users to sign up**.
 6. Click **Connect** at the top of the project (or open **Project Settings → API**) and copy two values: the **Project URL** and the **anon / publishable key**. Paste them into [`assets/js/config.js`](assets/js/config.js). (The anon key is meant to be public; the database rules protect your data.)
 
-## 2. Turn on AI labelling (free)
+## 2. Naming toys
+
+By default the staff app names toys **on the device** (Add toys → Naming → On this device): a small picture-matching model runs in the browser and picks the toy type (Teddy Bear, Toy Phone, Musical Book…), its main colour, category and age group. No key and no service to set up; the model (about 55 MB) downloads the first time and the browser keeps it. The toy types live in `assets/js/staff/recognise.js`.
+
+### Optional: online AI naming (better with brands and characters)
 
 1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey), sign in with a Google account and click **Create API key**. Copy it. The free tier needs no card; it allows a few photos a minute, and the staff app waits and retries when you upload many at once.
 2. In Supabase open **Edge Functions → Deploy a new function → Via Editor**. Name it `label-toy`, replace the sample code with everything from [`supabase/functions/label-toy/index.ts`](supabase/functions/label-toy/index.ts) and click **Deploy**.

@@ -33,7 +33,10 @@ function watch(page) {
 before(async () => {
   h = await startHarness();
   browser = await playwright.chromium.launch();
-  staff = watch(await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage());
+  const staffContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  // Most tests use the pretend online AI; one test below names on the device.
+  await staffContext.addInitScript(() => { if (!localStorage.getItem('naming')) localStorage.setItem('naming', 'online'); });
+  staff = watch(await staffContext.newPage());
   shopper = watch(await (await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage());
 });
 after(async () => {
@@ -264,6 +267,41 @@ test('toys the AI could not name get another try', async () => {
   assert.equal(await staff.locator('#aiAll').count(), 0);
   const names = await staff.locator('.rcard [data-f=name]').evaluateAll((els) => els.map((e) => e.value));
   assert.ok(!names.some((n) => /^toy1$|Unnamed/i.test(n)), names.join(', '));
+});
+
+// A stand-in for the picture-matching library: each prompt or photo becomes
+// a vector of the keywords it contains, so a photo "of" a yellow teddy
+// matches the teddy prompts and the yellow prompt.
+const FAKE_RECOGNISER = `
+const WORDS = ['teddy', 'saxophone', 'yellow', 'pink'];
+const vec = (text) => WORDS.map((w) => (text.includes(w) ? 1 : 0));
+const tensor = (rows) => ({ tolist: () => rows });
+export const env = {};
+export const RawImage = { fromBlob: async () => ({}) };
+export const AutoProcessor = { from_pretrained: async () => async () => ({}) };
+export const CLIPVisionModelWithProjection = { from_pretrained: async () => async () => ({ image_embeds: tensor([vec('teddy yellow')]) }) };
+export const AutoTokenizer = { from_pretrained: async () => (prompts) => ({ prompts }) };
+export const CLIPTextModelWithProjection = { from_pretrained: async () => async ({ prompts }) => ({ text_embeds: tensor(prompts.map(vec)) }) };
+`;
+
+test('toys are named on the device without any key', async () => {
+  await staff.route('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1', (route) => route.fulfill({
+    body: FAKE_RECOGNISER, contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' },
+  }));
+  h.ai.down = true; // the online AI is not used
+  await staff.goto(`${h.url}/staff/#upload`);
+  await staff.getByRole('button', { name: 'On this device (free)' }).click();
+  await staff.setInputFiles('#files', [photo('toy2.jpg')]);
+  await staff.getByText('Yellow Teddy Bear').first().waitFor({ timeout: 30000 });
+  h.ai.down = false;
+  const pg = new (require('pg').Client)({ connectionString: h.dbUrl });
+  await pg.connect();
+  const row = (await pg.query("select category, age_range, ai_labels from toys where name = 'Yellow Teddy Bear'")).rows[0];
+  await pg.end();
+  assert.equal(row.category, 'Soft Toys');
+  assert.equal(row.age_range, '0-2');
+  assert.equal(row.ai_labels.source, 'device');
+  await staff.getByRole('button', { name: 'Online AI (needs a key)' }).click();
 });
 
 test('no browser errors along the way', () => {

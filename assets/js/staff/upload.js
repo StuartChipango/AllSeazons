@@ -3,7 +3,7 @@ import { readZip } from '../unzip.js';
 import { friendlyError } from '../db.js';
 import { shared, refreshBadges } from './app.js';
 import { $, $$, seg } from './ui.js';
-import { addToyFromPhoto } from './photos.js';
+import { addToyFromPhoto, namingMode, setNamingMode } from './photos.js';
 
 const opts = { price: null, audience: '', condition: '', box_id: '' };
 const jobs = [];
@@ -35,6 +35,8 @@ function render() {
         `<button class="chip" data-opt="price" data-value="${p}" aria-pressed="${p === opts.price}">${kwacha(p)}</button>`).join('')}
         <label class="chip" style="gap:4px">Other K<input type="number" min="1" id="otherPrice" style="width:80px;min-height:28px;padding:2px 6px" value="${shared.tiers.includes(opts.price) ? '' : opts.price}"></label>
       </div>
+      <span class="lbl" style="margin-top:10px">Naming</span>
+      ${seg('naming', namingMode(), [['device', 'On this device (free)'], ['online', 'Online AI (needs a key)']])}
       <span class="lbl" style="margin-top:10px">Boys, girls or neutral</span>
       ${seg('audience', opts.audience, [['', 'Let AI decide'], ['boys', 'Boys'], ['girls', 'Girls'], ['neutral', 'Neutral']])}
       <span class="lbl" style="margin-top:10px">Used or new</span>
@@ -74,7 +76,11 @@ function render() {
 function wire() {
   $$('[data-opt="price"]', root).forEach((b) => b.onclick = () => { opts.price = Number(b.dataset.value); render(); });
   $('#otherPrice', root).onchange = (e) => { const v = parseInt(e.target.value, 10); if (v > 0) { opts.price = v; render(); } };
-  $$('[data-seg]', root).forEach((b) => b.onclick = () => { opts[b.dataset.seg] = b.dataset.value; render(); });
+  $$('[data-seg]', root).forEach((b) => b.onclick = () => {
+    if (b.dataset.seg === 'naming') setNamingMode(b.dataset.value);
+    else opts[b.dataset.seg] = b.dataset.value;
+    render();
+  });
   $('#boxSel', root).onchange = (e) => { opts.box_id = e.target.value; };
   const drop = $('#drop', root);
   $('#files', root).onchange = (e) => addFiles(e.target.files);

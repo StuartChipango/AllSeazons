@@ -21,7 +21,7 @@ function card(t) {
   const priceOptions = [...new Set([...shared.tiers, t.price])].sort((a, b) => a - b);
   const ai = t.ai_labels || {};
   const flag = ai.error ? `AI could not name this one (${esc(ai.error)}). Please type the name.`
-    : t.needs_attention ? 'AI was not sure about this one. Please check the name.' : '';
+    : t.needs_attention ? `Not sure about this one. Please check the name.${ai.alternatives?.length ? ` It might also be: ${esc(ai.alternatives.join(', '))}.` : ''}` : '';
   return `
     <article class="rcard ${t.needs_attention ? 'attn' : ''}" data-id="${t.id}">
       <div class="pic"><img src="${esc(imageUrl(t.image_path))}" alt="${esc(t.name)}" loading="lazy"></div>
