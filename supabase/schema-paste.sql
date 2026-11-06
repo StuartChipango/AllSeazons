@@ -27,6 +27,7 @@ weekly_goal int not null default 2000,
 updated_at timestamptz not null default now()
 );
 insert into public.settings (id) values (1) on conflict (id) do nothing;
+alter table public.settings add column if not exists packaging_fee int not null default 40 check (packaging_fee >= 0);
 create table if not exists public.price_tiers (
 price int primary key check (price > 0)
 );
@@ -340,7 +341,8 @@ from public.order_items where order_id = v_order.id;
 v_size := public.parcel_size(v_count);
 v_fee := case
 when v_method = 'courier' then
-case v_size when 'small' then v_town.fee_small when 'medium' then v_town.fee_medium else v_town.fee_large end
+(case v_size when 'small' then v_town.fee_small when 'medium' then v_town.fee_medium else v_town.fee_large end)
++ s.packaging_fee
 else 0
 end;
 update public.orders
