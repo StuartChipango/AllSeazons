@@ -1,11 +1,13 @@
 // Supabase Edge Function: label-toy
 //
-// The staff app sends one toy photo; this asks Claude to name the toy and
+// The staff app sends one toy photo; this asks an AI to name the toy and
 // suggest its group (boys, girls or neutral), condition, category and age.
 // Everything it suggests is checked by a person on the Review page.
 //
-// Needs the secret ANTHROPIC_API_KEY (Supabase > Edge Functions > Secrets).
-// Optional secret LABEL_MODEL to use a different Claude model.
+// Needs one secret (Supabase > Edge Functions > Secrets):
+//   GEMINI_API_KEY    free key from https://aistudio.google.com/apikey, or
+//   ANTHROPIC_API_KEY to use Claude instead (paid).
+// Optional secret LABEL_MODEL to use a different model.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.132.1";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
@@ -25,15 +27,16 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "Use POST." }, 405);
 
-  // Only signed-in staff may use this (it costs money per photo).
+  // Only signed-in staff may use this.
   const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
     global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
   });
   const { data: isStaff } = await supabase.rpc("is_staff");
   if (isStaff !== true) return json({ error: "Staff only." }, 403);
 
+  const geminiKey = Deno.env.get("GEMINI_API_KEY");
   const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) return json({ error: "ANTHROPIC_API_KEY is not set in Supabase secrets." }, 500);
+  if (!geminiKey && !apiKey) return json({ error: "Add the GEMINI_API_KEY secret in Supabase (Edge Functions > Secrets)." }, 500);
 
   let body: { image?: string; media_type?: string };
   try {
@@ -82,6 +85,17 @@ Deno.serve(async (req) => {
 - description: one short friendly sentence for parents (no price, no condition claims you cannot see).
 - confidence: how sure you are of the name.`;
 
+  const tidy = (labels: Record<string, unknown>) => {
+    labels.name = String(labels.name ?? "").trim().slice(0, 40) || "Unnamed toy";
+    labels.tagline = String(labels.tagline ?? "").trim().slice(0, 30);
+    return json({ labels });
+  };
+
+  if (geminiKey) {
+    const result = await askGemini(geminiKey, image, mediaType, prompt, schema);
+    return "labels" in result ? tidy(result.labels) : json({ error: result.error }, result.status);
+  }
+
   const client = new Anthropic({ apiKey });
   try {
     const response = await client.beta.messages.create({
@@ -104,10 +118,7 @@ Deno.serve(async (req) => {
     }
     const text = response.content.find((b) => b.type === "text");
     if (!text || text.type !== "text") return json({ error: "No label came back." }, 502);
-    const labels = JSON.parse(text.text);
-    labels.name = String(labels.name ?? "").trim().slice(0, 40) || "Unnamed toy";
-    labels.tagline = String(labels.tagline ?? "").trim().slice(0, 30);
-    return json({ labels });
+    return tidy(JSON.parse(text.text));
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) return json({ error: "Too many photos at once. Try again in a minute." }, 429);
     if (err instanceof Anthropic.AuthenticationError) return json({ error: "The Anthropic API key is not valid." }, 500);
@@ -115,3 +126,57 @@ Deno.serve(async (req) => {
     return json({ error: "Could not label this photo." }, 500);
   }
 });
+
+// Google Gemini (free tier).
+async function askGemini(
+  key: string, image: string, mediaType: string, prompt: string, schema: Record<string, unknown>,
+): Promise<{ labels: Record<string, unknown> } | { error: string; status: number }> {
+  // Gemini's own schema format: upper-case types, no additionalProperties.
+  const convert = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(convert);
+    if (!node || typeof node !== "object") return node;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(node)) {
+      if (k === "additionalProperties") continue;
+      out[k] = k === "type" && typeof v === "string" ? v.toUpperCase() : k === "enum" ? v : convert(v);
+    }
+    return out;
+  };
+  const responseSchema = convert(schema);
+  const body = JSON.stringify({
+    contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: image } }, { text: prompt }] }],
+    generationConfig: { responseMimeType: "application/json", responseSchema, temperature: 0.2 },
+  });
+  // Try the chosen model, then Google's current Flash model.
+  const models = [Deno.env.get("LABEL_MODEL"), "gemini-flash-latest", "gemini-2.5-flash"].filter(Boolean) as string[];
+  let last = { error: "Could not label this photo.", status: 502 };
+  for (const model of [...new Set(models)]) {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body,
+    });
+    if (res.status === 404) continue;
+    if (res.status === 429) return { error: "Too many photos at once for the free AI. Try again in a minute.", status: 429 };
+    if (res.status === 400 || res.status === 403) {
+      const detail = await res.json().catch(() => null);
+      const msg = detail?.error?.message ?? "";
+      if (/API key/i.test(msg)) return { error: "The Gemini API key is not valid.", status: 500 };
+      last = { error: `Gemini error: ${msg || res.status}`, status: 502 };
+      continue;
+    }
+    if (!res.ok) {
+      last = { error: `Gemini error ${res.status}`, status: 502 };
+      continue;
+    }
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("");
+    if (!text) return { error: "The AI could not label this photo. Fill it in on the Review page.", status: 422 };
+    try {
+      return { labels: JSON.parse(text) };
+    } catch {
+      return { error: "The AI answer could not be read.", status: 502 };
+    }
+  }
+  return last;
+}

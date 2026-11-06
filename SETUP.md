@@ -17,16 +17,17 @@ About 30 minutes, once. You need: an email address, a card for the Anthropic acc
 5. Stop strangers from signing up: **Authentication → Sign In / Providers**, turn off **Allow new users to sign up**.
 6. Click **Connect** at the top of the project (or open **Project Settings → API**) and copy two values: the **Project URL** and the **anon / publishable key**. Paste them into [`assets/js/config.js`](assets/js/config.js). (The anon key is meant to be public; the database rules protect your data.)
 
-## 2. Turn on AI labelling
+## 2. Turn on AI labelling (free)
 
-1. Go to [console.anthropic.com](https://console.anthropic.com), sign up, add a little credit under **Billing** ($5 lasts a long time), and create a key under **API Keys**. Copy it.
+1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey), sign in with a Google account and click **Create API key**. Copy it. The free tier needs no card; it allows a few photos a minute, and the staff app waits and retries when you upload many at once.
 2. In Supabase open **Edge Functions → Deploy a new function → Via Editor**. Name it `label-toy`, replace the sample code with everything from [`supabase/functions/label-toy/index.ts`](supabase/functions/label-toy/index.ts) and click **Deploy**.
-3. Open **Edge Functions → Secrets** and add a secret named `ANTHROPIC_API_KEY` with the key you copied.
-   - Optional: to make labelling about 40 times cheaper, add `LABEL_MODEL` = `claude-haiku-5-5`. It is less accurate on brand names.
+3. Open **Edge Functions → Secrets** and add a secret named `GEMINI_API_KEY` with the key you copied.
+
+To use Claude instead (paid, better with brand names), add the secret `ANTHROPIC_API_KEY` with a key from [console.anthropic.com](https://console.anthropic.com) and leave `GEMINI_API_KEY` out. `LABEL_MODEL` picks a different model for either.
 
 If labelling is not set up yet, uploads still work: toys arrive on the Review page as "Unnamed toy" for you to name.
 
-### No Anthropic key? Name the photos with Claude in chat instead
+### Or name the photos with Claude in chat instead
 
 This uses your normal Claude account, so there is nothing to pay for per photo.
 

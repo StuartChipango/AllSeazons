@@ -16,11 +16,17 @@ async function functionError(error) {
 
 export async function askAI(image) {
   const small = await toJpeg(image, 1024, 0.8);
-  const { data, error } = await supabase.functions.invoke('label-toy', {
-    body: { image: await blobToBase64(small), media_type: 'image/jpeg' },
-  });
-  if (error) throw new Error(await functionError(error));
-  return data.labels;
+  const body = { image: await blobToBase64(small), media_type: 'image/jpeg' };
+  // The free AI allows only a few photos a minute: wait and try again.
+  for (let attempt = 0; ; attempt++) {
+    const { data, error } = await supabase.functions.invoke('label-toy', { body });
+    if (!error) return data.labels;
+    if (error.context?.status === 429 && attempt < 4) {
+      await new Promise((r) => setTimeout(r, 15000));
+      continue;
+    }
+    throw new Error(await functionError(error));
+  }
 }
 
 // src: { image, cutout, plate } (cutout and plate come with Claude packs).
