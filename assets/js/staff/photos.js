@@ -24,10 +24,11 @@ export function setNamingMode(mode) {
   try { localStorage.setItem('naming', mode); } catch { /* blocked: stays on device */ }
 }
 
-export async function nameToy(image, onStep = () => {}) {
+// vector: the photo's numbers, when the upload page already worked them out.
+export async function nameToy(image, onStep = () => {}, vector = null) {
   if (namingMode() === 'online') return askAI(image);
   const { recogniseToy } = await import('./recognise.js');
-  return recogniseToy(await toJpeg(image, 512, 0.85), onStep);
+  return recogniseToy(await toJpeg(image, 512, 0.85), onStep, vector);
 }
 
 export async function askAI(image) {
@@ -106,7 +107,7 @@ export async function addToyFromPhoto(file, options, onStep = () => {}) {
     if (!labels) {
       onStep('Naming the toy');
       try {
-        labels = await nameToy(image, onStep);
+        labels = await nameToy(image, onStep, options.vector);
       } catch (e) {
         aiError = e.message;
       }
@@ -181,6 +182,38 @@ export async function reframe(toy, changes) {
   return data;
 }
 
+// More photos (made smaller) and videos of a toy, kept in toys.media as
+// [{ path, type: 'image' | 'video' }]. The first photo stays the main one.
+const VIDEO_MAX = 50 * 1024 * 1024;
+export async function addMedia(toy, files) {
+  const added = [];
+  for (const file of files) {
+    const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm|3gp)$/i.test(file.name);
+    if (isVideo && file.size > VIDEO_MAX) throw new Error(`${file.name} is over 50 MB. Record a shorter video or send it smaller.`);
+    const blob = isVideo ? file : await toJpeg(await loadBitmap(file), 1600, 0.86);
+    const ext = isVideo ? (file.name.split('.').pop() || 'mp4').toLowerCase() : 'jpg';
+    const path = `${toy.id}/media-${Date.now()}-${added.length}.${ext}`;
+    const { error } = await supabase.storage.from('toys').upload(path, blob, {
+      contentType: isVideo ? file.type || 'video/mp4' : 'image/jpeg', cacheControl: '31536000',
+    });
+    if (error) throw error;
+    added.push({ path, type: isVideo ? 'video' : 'image' });
+  }
+  return saveMedia(toy, [...(toy.media || []), ...added]);
+}
+
+export async function removeMedia(toy, path) {
+  const saved = await saveMedia(toy, (toy.media || []).filter((m) => m.path !== path));
+  supabase.storage.from('toys').remove([path]).catch(() => {});
+  return saved;
+}
+
+async function saveMedia(toy, media) {
+  const { data, error } = await supabase.from('toys').update({ media }).eq('id', toy.id).select().single();
+  if (error) throw error;
+  return data;
+}
+
 // Ask the AI again for a toy it could not name (keeps price and stock).
 export async function relabel(toy) {
   const src = await sourceImage(toy);
@@ -219,7 +252,7 @@ export async function replacePhoto(toy, file, { relabel = false } = {}) {
 
 export async function deleteToyFiles(toy) {
   const jobs = [];
-  const shown = [toy.image_path, toy.photo_path].filter(Boolean);
+  const shown = [toy.image_path, toy.photo_path, ...(toy.media || []).map((m) => m.path)].filter(Boolean);
   if (shown.length) jobs.push(supabase.storage.from('toys').remove(shown));
   if (toy.raw_path) jobs.push(supabase.storage.from('raw').remove([toy.raw_path, cutPath(toy.id), platePath(toy.id)]));
   await Promise.allSettled(jobs);

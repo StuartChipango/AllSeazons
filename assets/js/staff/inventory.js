@@ -4,6 +4,7 @@ import { shared, refreshBadges } from './app.js';
 import { $, $$, toast, openPanel, closePanel, confirmBox, seg, download, busy, dateLabel } from './ui.js';
 import { reframe, replacePhoto, deleteToyFiles } from './photos.js';
 import { makeZip } from '../unzip.js';
+import { mediaHtml, wireMedia } from './media.js';
 
 const STATUS_LABEL = {
   available: 'In shop', review: 'Needs review', reserved: 'On hold', sold: 'Sold', damaged: 'Damaged', hidden: 'Hidden',
@@ -180,6 +181,7 @@ function edit(t) {
   const body = openPanel(`
     <h2>${esc(t.name)} <span class="pill ${t.status}">${STATUS_LABEL[t.status]}</span></h2>
     <img class="preview" src="${esc(imageUrl(t.image_path))}" alt="">
+    <div class="field"><span>More photos and video for the shop page</span><div id="mediaBox">${mediaHtml(t)}</div></div>
     <div class="row-actions" style="justify-content:flex-start;margin-bottom:12px">
       <label class="btn ghost small">Replace photo<input type="file" accept="image/*" id="newPhoto" hidden></label>
       ${t.status === 'available' ? '<button class="btn ghost small" id="sellOne">Sell in shop</button>' : ''}
@@ -210,6 +212,14 @@ function edit(t) {
         <button type="submit" class="btn">Save</button>
       </div>
     </form>`, { wide: false });
+
+  const media = $('#mediaBox', body);
+  const wireBox = () => wireMedia(media, t, (updated) => {
+    Object.assign(t, updated);
+    media.innerHTML = mediaHtml(t);
+    wireBox();
+  });
+  wireBox();
 
   const segVals = { audience: t.audience, condition: t.condition };
   $$('[data-seg]', body).forEach((b) => b.onclick = () => {

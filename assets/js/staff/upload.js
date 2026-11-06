@@ -3,9 +3,12 @@ import { readZip } from '../unzip.js';
 import { friendlyError } from '../db.js';
 import { shared, refreshBadges } from './app.js';
 import { $, $$, seg } from './ui.js';
-import { addToyFromPhoto, namingMode, setNamingMode } from './photos.js';
+import { addToyFromPhoto, addMedia, namingMode, setNamingMode } from './photos.js';
+import { loadBitmap, toJpeg } from '../frame.js';
 
-const opts = { price: null, audience: '', condition: '', box_id: '' };
+const opts = { price: null, audience: '', condition: '', box_id: '', group: 'on' };
+// How alike two photos must be to count as the same toy from another angle.
+const SAME_TOY = 0.9;
 const jobs = [];
 let running = 0;
 let root = null;
@@ -37,6 +40,9 @@ function render() {
       </div>
       <span class="lbl" style="margin-top:10px">Naming</span>
       ${seg('naming', namingMode(), [['device', 'On this device (free)'], ['online', 'Online AI (needs a key)']])}
+      <span class="lbl" style="margin-top:10px">Several photos of one toy</span>
+      ${seg('group', opts.group, [['on', 'Group them into one toy'], ['off', 'Every photo is a new toy']])}
+      <small style="color:var(--muted)">Take the angles of one toy one after another. A video goes with the photo just before it.</small>
       <span class="lbl" style="margin-top:10px">Boys, girls or neutral</span>
       ${seg('audience', opts.audience, [['', 'Let AI decide'], ['boys', 'Boys'], ['girls', 'Girls'], ['neutral', 'Neutral']])}
       <span class="lbl" style="margin-top:10px">Used or new</span>
@@ -51,7 +57,7 @@ function render() {
       <h2>Drop photos here</h2>
       <p>or choose them from your phone or laptop. JPEG or PNG. Name a file like “barbie camper.jpg” and that name is used.</p>
       <div class="row-actions" style="justify-content:center">
-        <label class="btn">Choose photos<input type="file" id="files" accept="image/jpeg,image/png,image/webp,image/*" multiple hidden></label>
+        <label class="btn">Choose photos or videos<input type="file" id="files" accept="image/*,video/*" multiple hidden></label>
         <label class="btn ghost">Choose a folder<input type="file" id="folder" webkitdirectory multiple hidden></label>
         <label class="btn ghost">Add a Claude pack<input type="file" id="pack" accept=".zip,.csv,application/zip,text/csv,image/*" multiple hidden></label>
       </div>
@@ -64,7 +70,7 @@ function render() {
         ${done ? '<a class="btn" href="#review">Review them</a>' : ''}</div>
       <ul class="queue">${jobs.map((j) => `
         <li>
-          <img src="${esc(j.thumb)}" alt="">
+          ${j.video ? '<span class="vid-thumb" aria-hidden="true">▶</span>' : `<img src="${esc(j.thumb)}" alt="">`}
           <div><div>${esc(j.toy?.name || j.file.name)}</div>
             <div class="st ${j.state === 'done' ? 'ok' : j.state === 'error' ? 'bad' : ''}">${esc(j.step)}</div></div>
           <div>${j.toy ? `<span class="pill">${esc(j.toy.code)}</span>` : ''}</div>
@@ -96,6 +102,7 @@ function wire() {
 // 001-plate.jpg (the photo with the toy painted out).
 const EXTRA = /-(cut\.png|plate\.jpg)$/i;
 const isImage = (f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|heic)$/i.test(f.name);
+const isVideo = (f) => f.type.startsWith('video/') || /\.(mp4|mov|webm|3gp)$/i.test(f.name);
 
 // Photos, plus any Claude pack (.zip) or labels.csv that came with them.
 async function addFiles(list) {
@@ -121,16 +128,23 @@ async function addFiles(list) {
     notice = { bad: true, text: 'Could not open the Claude pack: ' + e.message };
   }
   for (const f of files.filter((x) => EXTRA.test(x.name))) extras.set(f.name.toLowerCase(), f);
-  files = files.filter((f) => isImage(f) && !EXTRA.test(f.name));
+  files = files.filter((f) => (isImage(f) || isVideo(f)) && !EXTRA.test(f.name));
   if (labels.size) {
     const missing = files.filter((f) => !labels.has(labelKey(f.name))).length;
     notice = { bad: !!missing, text: `${files.length - missing} photo${files.length - missing === 1 ? '' : 's'} named by Claude.`
       + (missing ? ` ${missing} had no line in labels.csv and will be named by the AI or left as "Unnamed toy".` : '') };
   }
+  // Each job knows the one before it in this batch: a video, and (when
+  // grouping) a photo, waits for it and may join the same toy.
+  let prev = null;
   for (const file of files) {
-    jobs.unshift({
+    const video = isVideo(file);
+    const job = {
       file,
-      thumb: URL.createObjectURL(file),
+      video,
+      prev,
+      group: opts.group === 'on' && !labels.size,
+      thumb: video ? '' : URL.createObjectURL(file),
       state: 'waiting',
       step: 'Waiting',
       options: {
@@ -139,7 +153,9 @@ async function addFiles(list) {
         cutout: extras.get(`${labelKey(file.name)}-cut.png`) || null,
         plate: extras.get(`${labelKey(file.name)}-plate.jpg`) || null,
       },
-    });
+    };
+    jobs.unshift(job);
+    prev = job;
   }
   render();
   pump();
@@ -147,7 +163,8 @@ async function addFiles(list) {
 
 function pump() {
   while (running < PARALLEL) {
-    const job = [...jobs].reverse().find((j) => j.state === 'waiting');
+    const settled = (j) => !j || ['done', 'error'].includes(j.state);
+    const job = [...jobs].reverse().find((j) => j.state === 'waiting' && (settled(j.prev) || !(j.video || j.group)));
     if (!job) break;
     running++;
     job.state = 'working';
@@ -157,11 +174,43 @@ function pump() {
 
 async function run(job) {
   try {
+    if (job.video) {
+      const owner = job.prev?.owner;
+      if (!owner?.toy) throw new Error('Add a photo of the toy before its video.');
+      job.step = 'Uploading video…';
+      render();
+      owner.toy = await addMedia(owner.toy, [job.file]);
+      job.owner = owner;
+      job.state = 'done';
+      job.step = `Video added to ${owner.toy.name}`;
+      render();
+      return;
+    }
+    if (job.group) {
+      job.step = 'Checking for other angles…';
+      render();
+      const { imageVector, similarity } = await import('./recognise.js');
+      // If the recogniser cannot load, the photo just becomes its own toy.
+      job.vector = await imageVector(await toJpeg(await loadBitmap(job.file), 512, 0.85), (s) => { job.step = s + '…'; render(); })
+        .catch(() => null);
+      const before = job.prev && !job.prev.video ? job.prev : null;
+      const owner = before?.owner;
+      if (owner?.toy && job.vector && before.vector && similarity(job.vector, before.vector) >= SAME_TOY) {
+        owner.toy = await addMedia(owner.toy, [job.file]);
+        job.owner = owner;
+        job.state = 'done';
+        job.step = `Another angle of ${owner.toy.name}`;
+        render();
+        return;
+      }
+      if (job.vector) job.options = { ...job.options, vector: job.vector };
+    }
     if (/\.heic$/i.test(job.file.name) && !job.file.type.includes('jpeg')) {
       throw new Error('iPhone HEIC photo: export it as JPEG (or pick it with the phone, which converts it).');
     }
     const { toy, aiError } = await addToyFromPhoto(job.file, job.options, (s) => { job.step = s + '…'; render(); });
     job.toy = toy;
+    job.owner = { toy };
     job.state = 'done';
     job.step = aiError ? `Ready to review. AI could not name it: ${aiError}` : `Ready to review · ${kwacha(toy.price)}`;
   } catch (e) {

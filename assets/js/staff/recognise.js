@@ -89,6 +89,13 @@ const NO_COLOUR = new Set(['Building Blocks', 'Wooden Blocks', 'Stacking Rings',
   'Card Game', 'Toy Food Set', 'Picture Book', 'Story Books', 'Art Set', 'Play Dough Set', 'Toy Set', 'Toy Figures Set', 'Toy Animals', 'Football']);
 
 let ready = null;
+let attempts = 0;
+
+// Load once; after a failure (no internet) the next photo tries again.
+function loaded(onStep) {
+  if (!ready) ready = load(onStep).catch((e) => { ready = null; throw e; });
+  return ready;
+}
 
 const dot = (a, b) => a.reduce((s, v, i) => s + v * b[i], 0);
 const norm = (v) => { const n = Math.sqrt(dot(v, v)) || 1; return v.map((x) => x / n); };
@@ -108,7 +115,8 @@ function storeText(key, value) {
 }
 
 async function load(onStep) {
-  const lib = await import(LIB);
+  // The browser remembers a failed import, so a retry asks for a fresh URL.
+  const lib = await import(attempts++ ? `${LIB}?retry=${attempts}` : LIB);
   lib.env.allowLocalModels = false;
   let lastError;
   for (const id of MODELS) {
@@ -139,18 +147,25 @@ async function load(onStep) {
       lastError = e;
     }
   }
-  ready = null;
   throw new Error(`The toy recogniser could not load (${lastError?.message || 'no connection'}). Check the internet and try again.`);
 }
 
-// image: a JPEG/PNG Blob. Returns labels like the online AI's.
-export async function recogniseToy(blob, onStep = () => {}) {
-  if (!ready) ready = load(onStep);
-  const { lib, processor, vision, types, colours } = await ready;
-  onStep('Recognising the toy');
+// The photo as numbers (a unit vector): photos of the same toy from other
+// angles come out close together, which is how the upload page groups them.
+export async function imageVector(blob, onStep = () => {}) {
+  const { lib, processor, vision } = await loaded(onStep);
   const image = await lib.RawImage.fromBlob(blob);
   const { image_embeds } = await vision(await processor(image));
-  const img = norm(image_embeds.tolist()[0]);
+  return norm(image_embeds.tolist()[0]);
+}
+
+export const similarity = dot;
+
+// image: a JPEG/PNG Blob. Returns labels like the online AI's.
+export async function recogniseToy(blob, onStep = () => {}, vector = null) {
+  const { types, colours } = await loaded(onStep);
+  onStep('Recognising the toy');
+  const img = vector || await imageVector(blob, onStep);
 
   const typeProbs = softmax(types.map((t) => 100 * dot(img, t.vec)));
   const order = typeProbs.map((p, i) => [p, i]).sort((a, b) => b[0] - a[0]);

@@ -146,6 +146,8 @@ alter table public.toys add column if not exists has_cutout boolean not null def
 -- The plain photo the website shows (toys bucket). image_path is the
 -- branded, framed picture for social media.
 alter table public.toys add column if not exists photo_path text;
+-- More photos and videos for the toy's shop page: [{"path": ..., "type": "image" | "video"}].
+alter table public.toys add column if not exists media jsonb not null default '[]'::jsonb;
 
 -- ---------------------------------------------------------------------
 -- Orders.
