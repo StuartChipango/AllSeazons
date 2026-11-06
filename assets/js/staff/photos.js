@@ -15,6 +15,21 @@ async function functionError(error) {
   return status ? `the AI service answered ${status}` : error.message || 'The AI labeller did not answer.';
 }
 
+// How toys get named: 'device' (free, recognised in this browser) or
+// 'online' (the label-toy function with a Gemini or Anthropic key).
+export function namingMode() {
+  try { return localStorage.getItem('naming') === 'online' ? 'online' : 'device'; } catch { return 'device'; }
+}
+export function setNamingMode(mode) {
+  try { localStorage.setItem('naming', mode); } catch { /* blocked: stays on device */ }
+}
+
+export async function nameToy(image, onStep = () => {}) {
+  if (namingMode() === 'online') return askAI(image);
+  const { recogniseToy } = await import('./recognise.js');
+  return recogniseToy(await toJpeg(image, 512, 0.85), onStep);
+}
+
 export async function askAI(image) {
   const small = await toJpeg(image, 1024, 0.8);
   const body = { image: await blobToBase64(small), media_type: 'image/jpeg' };
@@ -85,13 +100,13 @@ export async function addToyFromPhoto(file, options, onStep = () => {}) {
       [src.cutout, src.plate] = await Promise.all([loadBitmap(options.cutout), loadBitmap(options.plate)]);
     }
 
-    // Labels from a Claude pack come with the photo; otherwise ask the AI.
+    // Labels from a Claude pack come with the photo; otherwise recognise it.
     let labels = options.labels || null;
     let aiError = '';
     if (!labels) {
-      onStep('AI is naming the toy');
+      onStep('Naming the toy');
       try {
-        labels = await askAI(image);
+        labels = await nameToy(image, onStep);
       } catch (e) {
         aiError = e.message;
       }
@@ -169,7 +184,7 @@ export async function reframe(toy, changes) {
 // Ask the AI again for a toy it could not name (keeps price and stock).
 export async function relabel(toy) {
   const src = await sourceImage(toy);
-  const labels = await askAI(src.image);
+  const labels = await nameToy(src.image);
   return reframe(toy, {
     name: labels.name, tagline: labels.tagline || null, audience: labels.audience, condition: labels.condition,
     category: labels.category, age_range: labels.age_range, brand: labels.brand || null,
@@ -189,7 +204,7 @@ export async function replacePhoto(toy, file, { relabel = false } = {}) {
   bitmaps.set(toy.id, { image, cutout: null, plate: null });
   let changes = { raw_path: rawPath, has_cutout: false, focus: null };
   if (relabel) {
-    const labels = await askAI(image).catch(() => null);
+    const labels = await nameToy(image).catch(() => null);
     if (labels) {
       changes = { ...changes, name: labels.name, tagline: labels.tagline || null, focus: labels.focus || null, audience: labels.audience, condition: labels.condition,
         category: labels.category, age_range: labels.age_range, brand: labels.brand || null,
