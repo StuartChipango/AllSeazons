@@ -1,0 +1,13 @@
+{
+  "name": "All Seazons Staff",
+  "short_name": "AS Staff",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fffafc",
+  "theme_color": "#1d1d1f",
+  "icons": [
+    { "src": "../assets/img/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "../assets/img/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

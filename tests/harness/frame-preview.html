@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><title>Frame preview</title>
+<body style="margin:0;display:flex;flex-wrap:wrap;gap:8px;background:#ddd">
+<script type="module">
+import { renderFrame, loadBitmap } from '../../assets/js/frame.js';
+const photo = new URLSearchParams(location.search).get('photo') || '../fixtures/photos/toy1.jpg';
+const blob = await (await fetch(photo)).blob();
+const image = await loadBitmap(blob);
+for (const [audience, condition, name] of [['boys','used','Paw Patrol Chase Police Cruiser'],['girls','new','Barbie Camper Van'],['neutral','used','Wooden Shape Sorter']]) {
+  const c = await renderFrame({ image, name, audience, condition });
+  c.style.width = '360px'; document.body.append(c);
+}
+document.body.dataset.done = '1';
+</script>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your All Seazons order</title>
+  <meta name="description" content="Tap to see the pictures of the toys in this order.">
+  <meta property="og:title" content="All Seazons Play order">
+  <meta property="og:description" content="Tap to see the pictures of the toys in this order.">
+  <meta property="og:image" content="assets/img/og.png">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/base.css">
+  <style>
+    .wrap { max-width: 760px; margin: 0 auto; padding: 20px 16px 50px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    header img { width: 110px; height: auto; }
+    h1 { font-size: 28px; margin: 18px 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 18px; }
+    .items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    @media (min-width: 640px) { .items { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    .item { background: #fff; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+    .item img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+    .item div { padding: 8px 10px 10px; font-size: 14px; }
+    .item strong { display: block; font-family: var(--display); font-weight: 600; font-size: 15px; }
+    .sum { margin-top: 20px; background: #fff; border-radius: 16px; border: 1px solid var(--line); padding: 14px 16px; display: grid; gap: 4px; }
+    .sum div { display: flex; justify-content: space-between; }
+    .sum .grand { font: 700 20px var(--display); }
+    .pill { display: inline-block; padding: 4px 12px; border-radius: 999px; background: var(--pink); font-weight: 600; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <a href="./"><img src="assets/img/logo.svg" alt="All Seazons Play" width="110" height="58"></a>
+      <span class="pill" id="state"></span>
+    </header>
+    <div id="out"><p class="sub">Loading your order…</p></div>
+  </main>
+  <script type="module">
+    import { supabase, imageUrl, configured } from './assets/js/db.js';
+    import { esc, kwacha, CONDITIONS, METHOD_LABEL } from './assets/js/lib.js';
+
+    const STATE = {
+      held: 'Waiting to confirm', confirmed: 'Confirmed', paid: 'Paid', packed: 'Packed',
+      sent: 'On its way', delivered: 'Delivered', cancelled: 'Cancelled', expired: 'Hold expired',
+    };
+    const q = new URLSearchParams(location.search);
+    const out = document.getElementById('out');
+    const { data, error } = configured
+      ? await supabase.rpc('get_order_public', { p_code: q.get('o') || '', p_key: q.get('k') || '' })
+      : { data: null, error: null };
+    if (error || !data) {
+      out.innerHTML = '<h1>Order not found</h1><p class="sub">Please check the link in your WhatsApp message, or <a href="./">visit the shop</a>.</p>';
+    } else {
+      document.title = `${data.code} · All Seazons Play`;
+      document.getElementById('state').textContent = STATE[data.status] || data.status;
+      out.innerHTML = `
+        <h1>Order ${esc(data.code)}</h1>
+        <p class="sub">${data.item_count} toy${data.item_count === 1 ? '' : 's'} · ${esc(METHOD_LABEL[data.delivery_method] || '')}</p>
+        <div class="items">${(data.items || []).map((it) => `
+          <figure class="item" style="margin:0">
+            <img src="${esc(imageUrl(it.image_path))}" alt="${esc(it.name)}">
+            <div><strong>${esc(it.name)}${it.qty > 1 ? ' ×' + it.qty : ''}</strong>${esc(CONDITIONS[it.condition] || '')} · ${kwacha(it.price * it.qty)}<br><span style="color:var(--muted)">${esc(it.code)}</span></div>
+          </figure>`).join('')}
+        </div>
+        <div class="sum">
+          <div><span>Toys</span><span>${kwacha(data.subtotal)}</span></div>
+          <div><span>Delivery</span><span>${data.delivery_fee === null ? 'To confirm' : data.delivery_fee ? kwacha(data.delivery_fee) : (data.delivery_method === 'yango' ? 'Paid to driver' : 'Free')}</span></div>
+          <div class="grand"><span>Total</span><span>${kwacha(data.total)}</span></div>
+        </div>`;
+    }
+  </script>
+</body>
+</html>

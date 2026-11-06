@@ -1,0 +1,167 @@
+import { esc, kwacha, parseCsv, packLabels, labelKey } from '../lib.js';
+import { readZip } from '../unzip.js';
+import { friendlyError } from '../db.js';
+import { shared, refreshBadges } from './app.js';
+import { $, $$, seg } from './ui.js';
+import { addToyFromPhoto } from './photos.js';
+
+const opts = { price: null, audience: '', condition: '', box_id: '' };
+const jobs = [];
+let running = 0;
+let root = null;
+const PARALLEL = 2;
+let notice = null;
+
+export async function show(main) {
+  root = main;
+  if (opts.price === null) opts.price = shared.tiers[0] ?? 50;
+  render();
+}
+
+export function leave() {
+  root = null;
+}
+
+function render() {
+  if (!root) return;
+  const done = jobs.filter((j) => j.state === 'done').length;
+  root.innerHTML = `
+    <div class="page-head"><h1>Add toys</h1></div>
+    <p class="lead">Pick the price for this batch, then add photos. Each photo becomes a toy with its name, frame and USED/NEW tag. You check them on the Review page before they go in the shop.</p>
+
+    <div class="card-box opts">
+      <span class="lbl">Price for this batch</span>
+      <div class="chips" id="tierChips">${shared.tiers.map((p) =>
+        `<button class="chip" data-opt="price" data-value="${p}" aria-pressed="${p === opts.price}">${kwacha(p)}</button>`).join('')}
+        <label class="chip" style="gap:4px">Other K<input type="number" min="1" id="otherPrice" style="width:80px;min-height:28px;padding:2px 6px" value="${shared.tiers.includes(opts.price) ? '' : opts.price}"></label>
+      </div>
+      <span class="lbl" style="margin-top:10px">Boys, girls or neutral</span>
+      ${seg('audience', opts.audience, [['', 'Let AI decide'], ['boys', 'Boys'], ['girls', 'Girls'], ['neutral', 'Neutral']])}
+      <span class="lbl" style="margin-top:10px">Used or new</span>
+      ${seg('condition', opts.condition, [['', 'Let AI decide'], ['used', 'Used'], ['new', 'New']])}
+      <label class="field" style="margin:10px 0 0;max-width:340px"><span>Box (optional)</span>
+        <select id="boxSel"><option value="">No box</option>${shared.boxes.map((b) =>
+          `<option value="${esc(b.id)}" ${b.id === opts.box_id ? 'selected' : ''}>${esc(b.id)}${b.supplier ? ' · ' + esc(b.supplier) : ''}</option>`).join('')}</select>
+      </label>
+    </div>
+
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add photos">
+      <h2>Drop photos here</h2>
+      <p>or choose them from your phone or laptop. JPEG or PNG. Name a file like “barbie camper.jpg” and that name is used.</p>
+      <div class="row-actions" style="justify-content:center">
+        <label class="btn">Choose photos<input type="file" id="files" accept="image/jpeg,image/png,image/webp,image/*" multiple hidden></label>
+        <label class="btn ghost">Choose a folder<input type="file" id="folder" webkitdirectory multiple hidden></label>
+        <label class="btn ghost">Add a Claude pack<input type="file" id="pack" accept=".zip,.csv,application/zip,text/csv,image/*" multiple hidden></label>
+      </div>
+      <p style="font-size:13px;color:var(--muted)">Claude pack: the .zip Claude makes from your photos in chat, with names and groups already filled in. You can also drop photos together with their labels.csv.</p>
+    </div>
+    ${notice ? `<p class="${notice.bad ? 'st bad' : 'st ok'}" role="status" style="margin-top:10px">${esc(notice.text)}</p>` : ''}
+
+    ${jobs.length ? `
+      <div class="page-head" style="margin-top:18px"><h2 style="margin-right:auto">This session: ${done} of ${jobs.length} ready</h2>
+        ${done ? '<a class="btn" href="#review">Review them</a>' : ''}</div>
+      <ul class="queue">${jobs.map((j) => `
+        <li>
+          <img src="${esc(j.thumb)}" alt="">
+          <div><div>${esc(j.toy?.name || j.file.name)}</div>
+            <div class="st ${j.state === 'done' ? 'ok' : j.state === 'error' ? 'bad' : ''}">${esc(j.step)}</div></div>
+          <div>${j.toy ? `<span class="pill">${esc(j.toy.code)}</span>` : ''}</div>
+        </li>`).join('')}</ul>` : ''}
+  `;
+  wire();
+}
+
+function wire() {
+  $$('[data-opt="price"]', root).forEach((b) => b.onclick = () => { opts.price = Number(b.dataset.value); render(); });
+  $('#otherPrice', root).onchange = (e) => { const v = parseInt(e.target.value, 10); if (v > 0) { opts.price = v; render(); } };
+  $$('[data-seg]', root).forEach((b) => b.onclick = () => { opts[b.dataset.seg] = b.dataset.value; render(); });
+  $('#boxSel', root).onchange = (e) => { opts.box_id = e.target.value; };
+  const drop = $('#drop', root);
+  $('#files', root).onchange = (e) => addFiles(e.target.files);
+  $('#folder', root).onchange = (e) => addFiles(e.target.files);
+  $('#pack', root).onchange = (e) => addFiles(e.target.files);
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); };
+  drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') $('#files', root).click(); };
+}
+
+// Claude packs carry, next to 001.jpg, 001-cut.png (the toy cut out) and
+// 001-plate.jpg (the photo with the toy painted out).
+const EXTRA = /-(cut\.png|plate\.jpg)$/i;
+const isImage = (f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|heic)$/i.test(f.name);
+
+// Photos, plus any Claude pack (.zip) or labels.csv that came with them.
+async function addFiles(list) {
+  let files = [...list];
+  let labels = new Map();
+  const extras = new Map();
+  notice = null;
+  try {
+    for (const zip of files.filter((f) => /\.zip$/i.test(f.name))) {
+      for (const entry of await readZip(zip)) {
+        if (/\.csv$/i.test(entry.name)) labels = new Map([...labels, ...packLabels(parseCsv(await entry.blob.text()))]);
+        else if (EXTRA.test(entry.name)) extras.set(entry.name.toLowerCase(), entry.blob);
+        else if (/\.(jpe?g|png|webp)$/i.test(entry.name)) {
+          const type = /\.png$/i.test(entry.name) ? 'image/png' : /\.webp$/i.test(entry.name) ? 'image/webp' : 'image/jpeg';
+          files.push(new File([entry.blob], entry.name, { type }));
+        }
+      }
+    }
+    for (const csv of files.filter((f) => /\.csv$/i.test(f.name))) {
+      labels = new Map([...labels, ...packLabels(parseCsv(await csv.text()))]);
+    }
+  } catch (e) {
+    notice = { bad: true, text: 'Could not open the Claude pack: ' + e.message };
+  }
+  for (const f of files.filter((x) => EXTRA.test(x.name))) extras.set(f.name.toLowerCase(), f);
+  files = files.filter((f) => isImage(f) && !EXTRA.test(f.name));
+  if (labels.size) {
+    const missing = files.filter((f) => !labels.has(labelKey(f.name))).length;
+    notice = { bad: !!missing, text: `${files.length - missing} photo${files.length - missing === 1 ? '' : 's'} named by Claude.`
+      + (missing ? ` ${missing} had no line in labels.csv and will be named by the AI or left as "Unnamed toy".` : '') };
+  }
+  for (const file of files) {
+    jobs.unshift({
+      file,
+      thumb: URL.createObjectURL(file),
+      state: 'waiting',
+      step: 'Waiting',
+      options: {
+        ...opts,
+        labels: labels.get(labelKey(file.name)) || null,
+        cutout: extras.get(`${labelKey(file.name)}-cut.png`) || null,
+        plate: extras.get(`${labelKey(file.name)}-plate.jpg`) || null,
+      },
+    });
+  }
+  render();
+  pump();
+}
+
+function pump() {
+  while (running < PARALLEL) {
+    const job = [...jobs].reverse().find((j) => j.state === 'waiting');
+    if (!job) break;
+    running++;
+    job.state = 'working';
+    run(job).finally(() => { running--; pump(); });
+  }
+}
+
+async function run(job) {
+  try {
+    if (/\.heic$/i.test(job.file.name) && !job.file.type.includes('jpeg')) {
+      throw new Error('iPhone HEIC photo: export it as JPEG (or pick it with the phone, which converts it).');
+    }
+    const { toy, aiError } = await addToyFromPhoto(job.file, job.options, (s) => { job.step = s + '…'; render(); });
+    job.toy = toy;
+    job.state = 'done';
+    job.step = aiError ? `Ready to review. AI could not name it: ${aiError}` : `Ready to review · ${kwacha(toy.price)}`;
+  } catch (e) {
+    job.state = 'error';
+    job.step = 'Failed: ' + friendlyError(e);
+  }
+  render();
+  refreshBadges();
+}

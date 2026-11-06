@@ -1,0 +1,15 @@
+{
+  "name": "allseazons-store",
+  "private": true,
+  "type": "module",
+  "description": "All Seazons Play online shop and staff app",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:db": "node --test tests/db.test.mjs",
+    "dev": "node tests/harness/server.mjs"
+  },
+  "devDependencies": {
+    "jsonwebtoken": "9.0.2",
+    "pg": "8.12.0"
+  }
+}
