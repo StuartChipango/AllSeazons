@@ -65,13 +65,20 @@ async function loadAll() {
   openFromHash();
 }
 
-async function loadToys() {
+// Columns the database may not have yet (until the latest schema is run):
+// the shop then loads without them instead of showing an error.
+const NEWER_COLUMNS = ['media'];
+
+async function loadToys(columns = TOY_COLUMNS) {
   const [live, sold] = await Promise.all([
-    supabase.from('toys').select(TOY_COLUMNS).in('status', ['available', 'reserved'])
+    supabase.from('toys').select(columns).in('status', ['available', 'reserved'])
       .order('approved_at', { ascending: false, nullsFirst: false }).limit(2000),
-    supabase.from('toys').select(TOY_COLUMNS).eq('status', 'sold').not('image_path', 'is', null)
+    supabase.from('toys').select(columns).eq('status', 'sold').not('image_path', 'is', null)
       .order('sold_at', { ascending: false, nullsFirst: false }).limit(400),
   ]);
+  if (live.error?.code === '42703' && columns === TOY_COLUMNS) {
+    return loadToys(TOY_COLUMNS.split(',').filter((c) => !NEWER_COLUMNS.includes(c)).join(','));
+  }
   if (live.error) {
     $('#status').textContent = friendlyError(live.error);
     return;
