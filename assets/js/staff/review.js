@@ -2,7 +2,7 @@ import { esc, kwacha, AGES } from '../lib.js';
 import { supabase, imageUrl, friendlyError } from '../db.js';
 import { shared, refreshBadges } from './app.js';
 import { $, $$, toast, seg, confirmBox, busy } from './ui.js';
-import { reframe, replacePhoto, deleteToyFiles } from './photos.js';
+import { reframe, replacePhoto, deleteToyFiles, relabel } from './photos.js';
 
 let root = null;
 let toys = [];
@@ -28,6 +28,7 @@ function card(t) {
       <div class="body">
         ${t.image_path ? '' : '<label class="btn soft small">Add a photo<input type="file" accept="image/*" data-f="photo" hidden></label>'}
         ${flag ? `<div class="flag">${flag}</div>` : ''}
+        ${ai.error && t.raw_path ? '<button class="btn soft small" data-act="ai">Try AI again</button>' : ''}
         <label class="field"><span>Small top line (optional)</span><input type="text" data-f="tagline" value="${esc(t.tagline || '')}" maxlength="30" placeholder="e.g. Big &amp; Small"></label>
         <label class="field"><span>Name</span><input type="text" data-f="name" value="${esc(t.name)}" maxlength="40"></label>
         ${seg('audience', t.audience, [['boys', 'Boys'], ['girls', 'Girls'], ['neutral', 'Neutral']])}
@@ -51,6 +52,7 @@ function render() {
   root.innerHTML = `
     <div class="page-head">
       <h1>Review</h1>
+      ${unnamed().length ? `<button class="btn soft" id="aiAll">Try AI again for ${unnamed().length}</button>` : ''}
       ${toys.length ? `<button class="btn" id="approveAll">Approve all ${toys.length}</button>` : ''}
     </div>
     <p class="lead">Check each picture. Fix the name, Boys/Girls/Neutral or Used/New and the picture redraws itself. Approved toys appear in the shop straight away.</p>
@@ -60,6 +62,18 @@ function render() {
 }
 
 function find(id) { return toys.find((t) => t.id === id); }
+const unnamed = () => toys.filter((t) => t.ai_labels?.error && t.raw_path);
+
+// One toy at a time, so the free AI's per-minute limit is not hit.
+async function retryAI(t, cardEl) {
+  cardEl?.querySelector('.pic')?.insertAdjacentHTML('beforeend', '<div class="working">AI is naming…</div>');
+  try {
+    Object.assign(t, await relabel(t));
+  } catch (e) {
+    t.ai_labels = { ...(t.ai_labels || {}), error: e.message };
+    toast(`${t.name}: ${e.message}`, true);
+  }
+}
 
 async function save(t, changes, el) {
   const needsFrame = ['name', 'tagline', 'audience', 'condition'].some((k) => k in changes && changes[k] !== t[k]);
@@ -97,6 +111,12 @@ function wire() {
     toast(`${data} toys are now in the shop`);
     show(root);
     refreshBadges();
+  });
+
+  $('#aiAll', root)?.addEventListener('click', async (e) => {
+    busy(e.target, true, 'AI is naming…');
+    for (const t of unnamed()) await retryAI(t, root?.querySelector(`.rcard[data-id="${t.id}"]`));
+    render();
   });
 
   $$('.rcard', root).forEach((el) => {
@@ -138,6 +158,11 @@ function wire() {
         toast(friendlyError(err), true);
         el.querySelector('.working')?.remove();
       }
+    });
+    el.querySelector('[data-act="ai"]')?.addEventListener('click', async (e) => {
+      busy(e.target, true, 'AI is naming…');
+      await retryAI(t, el);
+      render();
     });
     el.querySelector('[data-act="approve"]').addEventListener('click', async (e) => {
       busy(e.target, true);

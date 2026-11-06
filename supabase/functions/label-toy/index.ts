@@ -147,35 +147,43 @@ async function askGemini(
     contents: [{ parts: [{ inline_data: { mime_type: mediaType, data: image } }, { text: prompt }] }],
     generationConfig: { responseMimeType: "application/json", responseSchema, temperature: 0.2 },
   });
-  // Try the chosen model, then Google's current Flash model.
-  const models = [Deno.env.get("LABEL_MODEL"), "gemini-flash-latest", "gemini-2.5-flash"].filter(Boolean) as string[];
+  // Try the chosen model, then Google's other Flash models (each has its
+  // own free limit). A busy model (500/503) gets one more go first.
+  const models = [Deno.env.get("LABEL_MODEL"), "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-flash-lite-latest"]
+    .filter(Boolean) as string[];
   let last = { error: "Could not label this photo.", status: 502 };
   for (const model of [...new Set(models)]) {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body,
-    });
-    if (res.status === 404) continue;
-    if (res.status === 429) return { error: "Too many photos at once for the free AI. Try again in a minute.", status: 429 };
-    if (res.status === 400 || res.status === 403) {
-      const detail = await res.json().catch(() => null);
-      const msg = detail?.error?.message ?? "";
-      if (/API key/i.test(msg)) return { error: "The Gemini API key is not valid.", status: 500 };
-      last = { error: `Gemini error: ${msg || res.status}`, status: 502 };
-      continue;
-    }
-    if (!res.ok) {
-      last = { error: `Gemini error ${res.status}`, status: 502 };
-      continue;
-    }
-    const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("");
-    if (!text) return { error: "The AI could not label this photo. Fill it in on the Review page.", status: 422 };
-    try {
-      return { labels: JSON.parse(text) };
-    } catch {
-      return { error: "The AI answer could not be read.", status: 502 };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body,
+      });
+      if (res.status === 404) break;
+      if (res.status === 429) {
+        last = { error: "Too many photos at once for the free AI. Try again in a minute.", status: 429 };
+        break;
+      }
+      if (res.status === 500 || res.status === 503) {
+        last = { error: "The free AI is busy right now. Try again in a minute.", status: 503 };
+        if (attempt === 0) await new Promise((r) => setTimeout(r, 2000));
+        continue;
+      }
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        const msg = detail?.error?.message ?? "";
+        if (/API key/i.test(msg)) return { error: "The Gemini API key is not valid.", status: 500 };
+        last = { error: `Gemini error: ${msg || res.status}`, status: 502 };
+        break;
+      }
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("");
+      if (!text) return { error: "The AI could not label this photo. Fill it in on the Review page.", status: 422 };
+      try {
+        return { labels: JSON.parse(text) };
+      } catch {
+        return { error: "The AI answer could not be read.", status: 502 };
+      }
     }
   }
   return last;
