@@ -122,14 +122,15 @@ test('out-of-town orders pick the courier fee by parcel size', async () => {
   const c = { name: 'Mwila', phone: '0966000111', location: 'out_of_town', town_id: kitwe, address: 'Mazhandu Kitwe branch' };
   const one = await place([{ toy_id: toys[0].id }], c);
   assert.equal(one.parcel_size, 'small');
-  assert.equal(one.delivery_fee, 60);
-  assert.equal(one.total, 110);
+  // Courier K60 plus the K40 packaging fee.
+  assert.equal(one.delivery_fee, 100);
+  assert.equal(one.total, 150);
   assert.equal(one.delivery_method, 'courier');
   assert.equal(one.town, 'Kitwe');
   assert.equal(one.courier, 'Mazhandu');
   const four = await place(toys.slice(1, 5).map((t) => ({ toy_id: t.id })), { ...c, phone: '0966000222' });
   assert.equal(four.parcel_size, 'medium');
-  assert.equal(four.delivery_fee, 90);
+  assert.equal(four.delivery_fee, 130);
   const ndola = (await db.query(`select id from towns where name='Ndola'`)).rows[0].id;
   const t = await addToy();
   const unpriced = await place([{ toy_id: t.id }], { ...c, town_id: ndola, phone: '0966000333' });

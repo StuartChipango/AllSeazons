@@ -129,8 +129,8 @@ test('checkout sends a labelled order to WhatsApp and holds the toys', async () 
   assert.match(msg, /\*NEW ORDER ORD-1001\*/);
   assert.match(msg, /Big Brown Teddy \(AS-\d+\) - Used - K75/);
   assert.match(msg, /Red Race Car \(AS-\d+\) - Used - K75/);
-  assert.match(msg, /\*Delivery:\* Courier to Kitwe via Mazhandu, medium parcel - K90/);
-  assert.match(msg, /\*TOTAL TO PAY:\* K240/);
+  assert.match(msg, /\*Delivery:\* Courier to Kitwe via Mazhandu, medium parcel - K130/);
+  assert.match(msg, /\*TOTAL TO PAY:\* K280/);
   assert.match(msg, /\*Name:\* Mwila Phiri/);
   assert.match(msg, /\*Address:\* Collect at Mazhandu Kitwe/);
   const pictures = msg.match(/Pictures of my toys:\* (\S+)/)[1];
@@ -206,7 +206,7 @@ test('a walk-in sale takes the last toy off the website', async () => {
 test('staff home shows the week and what sells', async () => {
   await staff.goto(`${h.url}/staff/#home`);
   await staff.getByText('Sales this week').waitFor();
-  await staff.getByText('K315').waitFor();
+  await staff.getByText('K355').waitFor();
   await shot(staff, '10-home');
 });
 

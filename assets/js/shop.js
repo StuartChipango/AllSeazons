@@ -284,6 +284,9 @@ function cartLines() {
   return state.cart.map((c) => ({ ...c, toy: state.toys.find((t) => t.id === c.id) }));
 }
 
+// Packaging and a rider to the courier office, added to every courier fee.
+const packagingFee = () => Number(state.settings?.packaging_fee ?? 0);
+
 function cartTotals(lines) {
   const ok = lines.filter((l) => l.toy && l.toy.status === 'available');
   const count = ok.reduce((s, l) => s + l.qty, 0);
@@ -294,9 +297,9 @@ function cartTotals(lines) {
   let feeKnown = true;
   if (c.location === 'out_of_town') {
     const town = state.towns.find((t) => String(t.id) === String(c.town_id));
-    fee = courierFee(town, size);
-    feeKnown = fee !== null;
-    fee = fee ?? 0;
+    const courier = courierFee(town, size);
+    feeKnown = courier !== null;
+    fee = feeKnown ? courier + packagingFee() : 0;
   }
   return { ok, count, subtotal, size, fee, feeKnown, total: subtotal + fee };
 }
@@ -389,7 +392,7 @@ function renderCart() {
           </select>
           <small>Not listed? Message us on WhatsApp.</small>
         </label>
-        ${town ? `<p class="fee-note">Courier${town.courier ? ` (${esc(town.courier)})` : ''} to ${esc(town.name)}: ${sizeText}, ${t.feeKnown ? `<strong>${kwacha(t.fee)}</strong>` : 'fee confirmed on WhatsApp'}. ${esc(s.courier_note)}</p>` : ''}
+        ${town ? `<p class="fee-note">Courier${town.courier ? ` (${esc(town.courier)})` : ''} to ${esc(town.name)}: ${sizeText}, ${t.feeKnown ? `<strong>${kwacha(t.fee)}</strong>${packagingFee() ? ` (courier ${kwacha(t.fee - packagingFee())} + packaging and drop-off ${kwacha(packagingFee())})` : ''}` : 'fee confirmed on WhatsApp'}. ${esc(s.courier_note)}</p>` : ''}
         <label class="field"><span>Address or courier collection point <small>(optional)</small></span><textarea name="address" placeholder="Where the parcel should go">${esc(c.address || '')}</textarea></label>
       `}
       <label class="field"><span>Note for us <small>(optional)</small></span><input type="text" name="note" maxlength="200" value="${esc(c.note || '')}"></label>

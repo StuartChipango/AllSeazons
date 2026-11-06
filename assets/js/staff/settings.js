@@ -29,6 +29,7 @@ function render(towns, staff) {
           <label class="field"><span>Hold toys for (minutes)</span><input type="number" name="hold_minutes" min="10" max="10080" value="${s.hold_minutes}"><small>After checkout, before the order lapses.</small></label>
           <label class="field"><span>Medium parcel from (items)</span><input type="number" name="medium_from" min="2" value="${s.medium_from}"></label>
           <label class="field"><span>Large parcel from (items)</span><input type="number" name="large_from" min="3" value="${s.large_from}"></label>
+          <label class="field"><span>Packaging fee (K)</span><input type="number" name="packaging_fee" min="0" value="${s.packaging_fee ?? 40}"><small>Added to every courier fee: packaging and the rider to the courier office.</small></label>
           <label class="field"><span>Weekly sales goal (K)</span><input type="number" name="weekly_goal" min="0" value="${s.weekly_goal}"></label>
         </div>
         <label class="field"><span>Banner at the top of the shop (optional)</span><input type="text" name="announcement" value="${esc(s.announcement || '')}" placeholder="New toys every Friday!"></label>
@@ -48,7 +49,7 @@ function render(towns, staff) {
 
     <section class="settings-section card-box">
       <h2>Out-of-town towns and courier fees</h2>
-      <p class="lead" style="margin:0 0 10px">Leave a fee empty and the customer sees “fee confirmed on WhatsApp”. Parcel size comes from the number of items.</p>
+      <p class="lead" style="margin:0 0 10px">Enter the courier’s own price; the packaging fee above is added on top. Leave a fee empty and the customer sees “fee confirmed on WhatsApp”. Parcel size comes from the number of items.</p>
       <div class="table-wrap"><table class="table">
         <thead><tr><th>Town</th><th>Courier</th><th>Small (K)</th><th>Medium (K)</th><th>Large (K)</th><th>Show</th><th></th></tr></thead>
         <tbody>${towns.map((t) => `
@@ -92,7 +93,7 @@ function wire() {
     const rec = {
       whatsapp_number: f.whatsapp_number.trim(), hold_minutes: parseInt(f.hold_minutes, 10),
       medium_from: parseInt(f.medium_from, 10), large_from: parseInt(f.large_from, 10),
-      weekly_goal: parseInt(f.weekly_goal, 10) || 0, announcement: f.announcement.trim() || null,
+      weekly_goal: parseInt(f.weekly_goal, 10) || 0, packaging_fee: Math.max(0, parseInt(f.packaging_fee, 10) || 0), announcement: f.announcement.trim() || null,
       pickup_note: f.pickup_note.trim(), yango_note: f.yango_note.trim(), courier_note: f.courier_note.trim(),
       updated_at: new Date().toISOString(),
     };
