@@ -3,6 +3,7 @@ import { supabase, imageUrl, friendlyError } from '../db.js';
 import { shared, refreshBadges } from './app.js';
 import { $, $$, toast, seg, confirmBox, busy } from './ui.js';
 import { reframe, replacePhoto, deleteToyFiles, relabel } from './photos.js';
+import { mediaHtml, wireMedia } from './media.js';
 
 let root = null;
 let toys = [];
@@ -26,6 +27,7 @@ function card(t) {
     <article class="rcard ${t.needs_attention ? 'attn' : ''}" data-id="${t.id}">
       <div class="pic"><img src="${esc(imageUrl(t.image_path))}" alt="${esc(t.name)}" loading="lazy"></div>
       <div class="body">
+        ${t.image_path ? mediaHtml(t) : ''}
         ${t.image_path ? '' : '<label class="btn soft small">Add a photo<input type="file" accept="image/*" data-f="photo" hidden></label>'}
         ${flag ? `<div class="flag">${flag}</div>` : ''}
         ${ai.error && t.raw_path ? '<button class="btn soft small" data-act="ai">Try AI again</button>' : ''}
@@ -158,6 +160,11 @@ function wire() {
         toast(friendlyError(err), true);
         el.querySelector('.working')?.remove();
       }
+    });
+    wireMedia(el, t, (updated) => {
+      Object.assign(t, updated);
+      el.outerHTML = card(t);
+      wire();
     });
     el.querySelector('[data-act="ai"]')?.addEventListener('click', async (e) => {
       busy(e.target, true, 'AI is naming…');

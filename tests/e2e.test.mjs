@@ -5,7 +5,9 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, copyFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { startHarness } from './harness/server.mjs';
 
 const require = createRequire(import.meta.url);
@@ -285,7 +287,7 @@ export const CLIPTextModelWithProjection = { from_pretrained: async () => async 
 `;
 
 test('toys are named on the device without any key', async () => {
-  await staff.route('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1', (route) => route.fulfill({
+  await staff.route('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1*', (route) => route.fulfill({
     body: FAKE_RECOGNISER, contentType: 'text/javascript', headers: { 'Access-Control-Allow-Origin': '*' },
   }));
   h.ai.down = true; // the online AI is not used
@@ -302,6 +304,36 @@ test('toys are named on the device without any key', async () => {
   assert.equal(row.age_range, '0-2');
   assert.equal(row.ai_labels.source, 'device');
   await staff.getByRole('button', { name: 'Online AI (needs a key)' }).click();
+});
+
+test('angles of one toy and its video become one toy with a gallery', async () => {
+  // The stand-in recogniser sees every photo as the same toy.
+  const dir = mkdtempSync(join(tmpdir(), 'angles-'));
+  const second = join(dir, 'teddy-side.jpg');
+  copyFileSync(photo('toy2.jpg'), second);
+  const clip = join(dir, 'teddy.mp4');
+  writeFileSync(clip, Buffer.from('not really a video'));
+  await staff.goto(`${h.url}/staff/#upload`);
+  await staff.getByRole('button', { name: 'Group them into one toy' }).click();
+  await staff.setInputFiles('#files', [photo('toy2.jpg'), second, clip]);
+  await staff.getByText(/^Video added to /).waitFor({ timeout: 30000 });
+  await staff.getByText(/^Another angle of /).waitFor();
+
+  const pg = new (require('pg').Client)({ connectionString: h.dbUrl });
+  await pg.connect();
+  const row = (await pg.query("select id, name, media from toys order by created_at desc limit 1")).rows[0];
+  assert.deepEqual(row.media.map((m) => m.type), ['image', 'video']);
+  await pg.query("update toys set status = 'available', approved_at = now() where id = $1", [row.id]);
+  await pg.end();
+
+  await shopper.goto(`${h.url}/`);
+  await shopper.locator('.card', { hasText: row.name }).first().locator('.more').waitFor();
+  assert.equal(await shopper.locator('.card', { hasText: row.name }).first().locator('.more').textContent(), '2 photos · ▶ video');
+  await shopper.locator('.card', { hasText: row.name }).first().locator('.pic').click();
+  await shopper.locator('#toyBody .gallery .thumbs button').first().waitFor();
+  assert.equal(await shopper.locator('#toyBody .gallery .thumbs button').count(), 3);
+  assert.equal(await shopper.locator('#toyBody .gallery video').count(), 1);
+  await shopper.keyboard.press('Escape');
 });
 
 test('no browser errors along the way', () => {

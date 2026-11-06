@@ -4,7 +4,7 @@ import {
   priceBands, AUDIENCES, CONDITIONS, AGES, timeLabel,
 } from './lib.js';
 
-const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,quantity,status,image_path,photo_path,created_at,approved_at,sold_at';
+const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,quantity,status,image_path,photo_path,media,created_at,approved_at,sold_at';
 const $ = (sel) => document.querySelector(sel);
 
 const state = {
@@ -171,6 +171,15 @@ function inCart(id) {
   return state.cart.find((c) => c.id === id);
 }
 
+// "3 photos · video" on a card whose toy has more than one picture.
+function moreHtml(t) {
+  const media = t.media || [];
+  if (!media.length) return '';
+  const photos = 1 + media.filter((m) => m.type !== 'video').length;
+  const video = media.some((m) => m.type === 'video');
+  return `<span class="more">${photos > 1 ? `${photos} photos` : ''}${photos > 1 && video ? ' · ' : ''}${video ? '▶ video' : ''}</span>`;
+}
+
 function cardHtml(t) {
   const sold = t.status === 'sold';
   const hold = t.status === 'reserved';
@@ -184,6 +193,7 @@ function cardHtml(t) {
     <article class="card for-${esc(t.audience || 'neutral')} ${sold ? 'is-sold' : ''} ${hold ? 'is-hold' : ''}" data-id="${t.id}">
       <button class="pic" data-open="${t.id}" aria-label="See ${esc(t.name)}">
         ${ribbon}<span class="cond ${t.condition === 'new' ? 'new' : ''}">${esc(CONDITIONS[t.condition] || 'Used')}</span>
+        ${moreHtml(t)}
         <img src="${esc(photoUrl(t))}" alt="${esc(t.name)}" loading="lazy" width="540" height="540">
       </button>
       <div class="body">
@@ -231,12 +241,27 @@ function findToy(id) {
   return state.toys.find((t) => t.id === id) || state.sold.find((t) => t.id === id);
 }
 
+// The main photo, then any other angles and videos: swipe, or tap a thumbnail.
+function galleryHtml(t) {
+  const slides = [{ url: photoUrl(t), type: 'image' }, ...(t.media || []).map((m) => ({ url: imageUrl(m.path), type: m.type }))];
+  const slide = (s, i) => s.type === 'video'
+    ? `<video src="${esc(s.url)}" controls playsinline preload="metadata" data-slide="${i}"></video>`
+    : `<img src="${esc(s.url)}" alt="${esc(t.name)}${i ? ` (photo ${i + 1})` : ''}" data-slide="${i}" ${i ? 'loading="lazy"' : ''}>`;
+  if (slides.length === 1) return `<div class="gallery"><div class="slides">${slide(slides[0], 0)}</div></div>`;
+  return `
+    <div class="gallery">
+      <div class="slides" tabindex="0" aria-label="Photos of ${esc(t.name)}">${slides.map(slide).join('')}</div>
+      <div class="thumbs">${slides.map((s, i) => `<button type="button" data-goto="${i}" aria-label="${s.type === 'video' ? 'Video' : `Photo ${i + 1}`}">
+        ${s.type === 'video' ? '<span>▶</span>' : `<img src="${esc(s.url)}" alt="" loading="lazy">`}</button>`).join('')}</div>
+    </div>`;
+}
+
 function openToy(t) {
   const sold = t.status === 'sold';
   const hold = t.status === 'reserved';
   $('#toyBody').innerHTML = `
     <div class="inner toy-detail">
-      <img src="${esc(photoUrl(t))}" alt="${esc(t.name)}" width="1080" height="1080">
+      ${galleryHtml(t)}
       <h2 id="toyTitle">${esc(t.name)}</h2>
       ${sold ? '<p><strong>Sold.</strong> Ask us on WhatsApp if you want something similar.</p>' : priceHtml(t)}
       <div class="tags">
@@ -252,6 +277,11 @@ function openToy(t) {
       ${sold || hold ? (hold ? '<p><strong>On hold</strong> for another customer. It may come back soon.</p>' : '')
         : `<button class="btn block add ${inCart(t.id) ? 'in-cart' : ''}" data-add="${t.id}">${inCart(t.id) ? 'In cart ✓' : 'Add to cart'}</button>`}
     </div>`;
+  const slides = $('#toyBody .slides');
+  document.querySelectorAll('#toyBody [data-goto]').forEach((b) => b.onclick = () => {
+    const target = slides.querySelector(`[data-slide="${b.dataset.goto}"]`);
+    slides.scrollTo({ left: target.offsetLeft - slides.offsetLeft, behavior: 'smooth' });
+  });
   if (location.hash !== '#' + t.code) history.replaceState(null, '', '#' + t.code);
   $('#toyDialog').showModal();
 }
