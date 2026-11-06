@@ -250,6 +250,22 @@ test('stock page downloads a social media pack of framed pictures', async () => 
   assert.match(captions, /Order: http.+#/);
 });
 
+test('toys the AI could not name get another try', async () => {
+  h.ai.down = true;
+  await staff.goto(`${h.url}/staff/#upload`);
+  await staff.setInputFiles('#files', [photo('toy1.jpg')]);
+  await staff.getByText(/AI could not name it/).waitFor({ timeout: 30000 });
+  h.ai.down = false;
+  await staff.goto(`${h.url}/staff/#review`);
+  const card = staff.locator('.rcard', { has: staff.getByRole('button', { name: 'Try AI again' }) });
+  await card.waitFor();
+  await staff.getByRole('button', { name: /Try AI again for 1/ }).click();
+  await staff.locator('[data-act=ai]').waitFor({ state: 'detached', timeout: 30000 });
+  assert.equal(await staff.locator('#aiAll').count(), 0);
+  const names = await staff.locator('.rcard [data-f=name]').evaluateAll((els) => els.map((e) => e.value));
+  assert.ok(!names.some((n) => /^toy1$|Unnamed/i.test(n)), names.join(', '));
+});
+
 test('no browser errors along the way', () => {
   assert.deepEqual(errors, []);
 });

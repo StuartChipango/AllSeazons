@@ -116,6 +116,8 @@ function bearerClaims(req) {
 }
 
 let labelCount = 0;
+// Tests switch the pretend AI off and on with h.ai.down.
+const ai = { down: false };
 const LABELS = [
   { name: 'Teddy Bear', brand: '', audience: 'neutral', condition: 'used', category: 'Soft Toys', age_range: '0-2', description: 'A soft, cuddly bear for little hands.', confidence: 'high' },
   { name: 'Red Race Car', brand: 'Hot Wheels', audience: 'boys', condition: 'used', category: 'Cars & Vehicles', age_range: '3-5', description: 'A shiny red car ready to race.', confidence: 'high' },
@@ -199,6 +201,7 @@ async function handle(req, res, url) {
     const body = JSON.parse((await readBody(req)).toString() || '{}');
     if (!body.image) return send(res, 400, { error: 'Send an image.' });
     if (process.env.LABEL_FAIL) return send(res, 500, { error: 'ANTHROPIC_API_KEY is not set in Supabase secrets.' });
+    if (ai.down) return send(res, 422, { error: 'The AI could not label this photo.' });
     const labels = { ...LABELS[labelCount++ % LABELS.length] };
     return send(res, 200, { labels });
   }
@@ -230,6 +233,7 @@ export async function startHarness({ reset = true } = {}) {
     url: `http://localhost:${PORT}`,
     dbUrl: DB_URL,
     staff: STAFF,
+    ai,
     async stop() {
       server.close();
       pgrst.kill();

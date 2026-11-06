@@ -11,18 +11,21 @@ async function functionError(error) {
     const body = await error.context?.json();
     if (body?.error) return body.error;
   } catch { /* not JSON */ }
-  return error.message || 'The AI labeller did not answer.';
+  const status = error.context?.status;
+  return status ? `the AI service answered ${status}` : error.message || 'The AI labeller did not answer.';
 }
 
 export async function askAI(image) {
   const small = await toJpeg(image, 1024, 0.8);
   const body = { image: await blobToBase64(small), media_type: 'image/jpeg' };
-  // The free AI allows only a few photos a minute: wait and try again.
+  // The free AI allows only a few photos a minute and is sometimes busy:
+  // wait and try again.
   for (let attempt = 0; ; attempt++) {
     const { data, error } = await supabase.functions.invoke('label-toy', { body });
     if (!error) return data.labels;
-    if (error.context?.status === 429 && attempt < 4) {
-      await new Promise((r) => setTimeout(r, 15000));
+    const status = error.context?.status;
+    if ([429, 500, 502, 503, 504, 546].includes(status) && attempt < 4) {
+      await new Promise((r) => setTimeout(r, status === 429 ? 15000 : 6000 * (attempt + 1)));
       continue;
     }
     throw new Error(await functionError(error));
@@ -161,6 +164,18 @@ export async function reframe(toy, changes) {
     supabase.storage.from('toys').remove([toy.image_path]).catch(() => {});
   }
   return data;
+}
+
+// Ask the AI again for a toy it could not name (keeps price and stock).
+export async function relabel(toy) {
+  const src = await sourceImage(toy);
+  const labels = await askAI(src.image);
+  return reframe(toy, {
+    name: labels.name, tagline: labels.tagline || null, audience: labels.audience, condition: labels.condition,
+    category: labels.category, age_range: labels.age_range, brand: labels.brand || null,
+    description: labels.description, ai_labels: labels, needs_attention: labels.confidence === 'low',
+    ...(toy.has_cutout ? {} : { focus: labels.focus || null }),
+  });
 }
 
 // A new photo for an existing toy (keeps its name and details).
