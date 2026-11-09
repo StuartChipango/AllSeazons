@@ -81,7 +81,13 @@ export async function refreshBadges() {
 }
 
 async function showApp() {
-  const { data: me } = await supabase.rpc('my_staff');
+  let { data: me, error } = await supabase.rpc('my_staff');
+  // Until the new database file is run, my_staff() does not exist yet:
+  // carry on as before (every staff member can do everything).
+  if (error && (await supabase.rpc('is_staff')).data === true) {
+    const { data: u } = await supabase.auth.getUser();
+    me = { email: u?.user?.email, name: null, roles: ['owner'] };
+  }
   if (!me?.email) {
     await supabase.auth.signOut();
     showLogin('This account is not on the team, or it is switched off. Ask the owner.');
