@@ -238,7 +238,7 @@ function cardHtml(t) {
     : hold ? '<span class="ribbon hold">On hold</span>'
     : isSpecial(t) ? '<span class="ribbon">Special</span>' : '';
   const button = sold || hold ? ''
-    : `<button class="add ${added ? 'in-cart' : ''}" data-add="${t.id}" aria-label="${added ? 'In cart' : 'Add to cart'}">${added ? TICK : PLUS}</button>`;
+    : `<button class="add ${added ? 'in-cart' : ''}" data-add="${t.id}" aria-label="${added ? 'In cart' : 'Add to cart'}">${added ? TICK + '<span>Added</span>' : PLUS + '<span>Buy</span>'}</button>`;
   return `
     <article class="card for-${esc(t.audience || 'neutral')} ${sold ? 'is-sold' : ''} ${hold ? 'is-hold' : ''}" data-id="${t.id}">
       <button class="pic" data-open="${t.id}" aria-label="See ${esc(t.name)}">
@@ -248,10 +248,9 @@ function cardHtml(t) {
       </button>
       <div class="body">
         <div class="name">${esc(t.name)}</div>
-        ${sold ? '<div class="meta">Found a new home</div>' : priceHtml(t)}
         ${t.age_range ? `<div class="meta">${esc(t.age_range)} yrs</div>` : ''}
+        <div class="buy-row">${sold ? '<div class="meta">Found a new home</div>' : priceHtml(t)}${button}</div>
       </div>
-      ${button}
     </article>`;
 }
 

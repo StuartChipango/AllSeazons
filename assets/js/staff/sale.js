@@ -5,7 +5,6 @@ import { supabase, imageUrl, friendlyError } from '../db.js';
 import { refreshBadges } from './app.js';
 import { $, $$, openPanel, busy } from './ui.js';
 
-const COLS = 'id,code,name,price,sale_price,status,quantity,condition,thumb_path,photo_path,image_path';
 const SHOW = 60;
 let root = null;
 let mode = 'shop';
@@ -18,7 +17,7 @@ export async function show(main) {
   root = main;
   mode = location.hash.includes('?wa') ? 'wa' : 'shop';
   const [t, w] = await Promise.all([
-    supabase.from('toys').select(COLS).eq('status', 'available').order('approved_at', { ascending: false, nullsFirst: false }).limit(2000),
+    supabase.from('toys').select('*').eq('status', 'available').order('approved_at', { ascending: false, nullsFirst: false }).limit(2000),
     mode === 'wa' ? supabase.from('towns').select('id,name').eq('active', true).order('name') : { data: [] },
   ]);
   if (t.error) throw t.error;

@@ -59,7 +59,7 @@ export async function show(main) {
       .in('orders.status', ['paid', 'packed', 'sent', 'delivered']).order('id', { ascending: false }).limit(2000),
     supabase.from('toys').select('*').eq('status', 'available')
       .lt('approved_at', sixty).order('approved_at').limit(12),
-    supabase.from('toys').select('id, code, name, price, thumb_path, photo_path, image_path').eq('status', 'available')
+    supabase.from('toys').select('*').eq('status', 'available')
       .order('approved_at', { ascending: false, nullsFirst: false }).limit(12),
   ]);
 
