@@ -1,6 +1,6 @@
 // Turning a phone photo into the plain website photo and the framed social
 // media picture, automatically.
-import { supabase } from '../db.js';
+import { supabase, imageUrl } from '../db.js';
 import { loadBitmap, toJpeg, canvasBlob, blobToBase64, renderFrame, renderPhoto } from '../frame.js';
 import { nameFromFile } from '../lib.js';
 
@@ -62,9 +62,46 @@ async function uploadCanvas(path, canvas) {
   return path;
 }
 
-// The website's plain photo (no frame), made once per photo.
-function uploadPlain(toyId, src, focus) {
-  return uploadCanvas(`${toyId}/photo-${Date.now()}.jpg`, renderPhoto({ ...src, focus }));
+// The website's plain photo (no frame), made once per photo, plus a small
+// copy for the shop's toy cards. Returns { photo_path, thumb_path }.
+const THUMB = 480;
+function shrink(canvas, size = THUMB) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(canvas, 0, 0, size, size);
+  return c;
+}
+async function uploadThumb(toyId, canvas) {
+  const blob = await canvasBlob(shrink(canvas), 0.8);
+  const path = `${toyId}/thumb-${Date.now()}.jpg`;
+  const { error } = await supabase.storage.from('toys').upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' });
+  if (error) throw error;
+  return path;
+}
+async function uploadPlain(toyId, src, focus) {
+  const canvas = renderPhoto({ ...src, focus });
+  const [photo_path, thumb_path] = await Promise.all([
+    uploadCanvas(`${toyId}/photo-${Date.now()}.jpg`, canvas),
+    uploadThumb(toyId, canvas),
+  ]);
+  return { photo_path, thumb_path };
+}
+
+// Toys from before thumbnails existed: make one from the plain photo.
+export async function makeThumb(toy) {
+  const res = await fetch(imageUrl(toy.photo_path));
+  if (!res.ok) throw new Error(`photo ${res.status}`);
+  const img = await loadBitmap(await res.blob());
+  const c = document.createElement('canvas');
+  const side = Math.min(img.width, img.height);
+  c.width = c.height = side;
+  c.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, side, side);
+  const thumb_path = await uploadThumb(toy.id, c);
+  const { error } = await supabase.from('toys').update({ thumb_path }).eq('id', toy.id);
+  if (error) throw error;
+  return thumb_path;
 }
 
 // One new photo -> one toy waiting on the Review page.
@@ -126,13 +163,13 @@ export async function addToyFromPhoto(file, options, onStep = () => {}) {
     };
 
     onStep('Adding the frame');
-    const [imagePath, photoPath] = await Promise.all([uploadFramed(toy.id, src, fields), uploadPlain(toy.id, src, fields.focus)]);
+    const [imagePath, plain] = await Promise.all([uploadFramed(toy.id, src, fields), uploadPlain(toy.id, src, fields.focus)]);
     const { data: saved, error: saveError } = await supabase.from('toys').update({
       ...fields,
       raw_path: rawPath,
       has_cutout: !!src.cutout,
       image_path: imagePath,
-      photo_path: photoPath,
+      ...plain,
       ai_labels: labels ? { ...labels } : { error: aiError },
       needs_attention: !labels || labels.confidence === 'low',
     }).eq('id', toy.id).select().single();
@@ -172,7 +209,7 @@ export async function reframe(toy, changes) {
   const src = await sourceImage(toy);
   const imagePath = await uploadFramed(toy.id, src, fields);
   // Toys from before the website used plain photos get theirs now.
-  if (!toy.photo_path && !changes.photo_path) changes = { ...changes, photo_path: await uploadPlain(toy.id, src, fields.focus) };
+  if (!toy.photo_path && !changes.photo_path) changes = { ...changes, ...(await uploadPlain(toy.id, src, fields.focus)) };
   const { data, error } = await supabase.from('toys').update({ ...changes, image_path: imagePath })
     .eq('id', toy.id).select().single();
   if (error) throw error;
@@ -244,15 +281,16 @@ export async function replacePhoto(toy, file, { relabel = false } = {}) {
         description: labels.description, ai_labels: labels };
     }
   }
-  const photoPath = await uploadPlain(toy.id, bitmaps.get(toy.id), changes.focus ?? null);
-  const saved = await reframe({ ...toy, raw_path: rawPath }, { ...changes, photo_path: photoPath });
-  if (toy.photo_path) supabase.storage.from('toys').remove([toy.photo_path]).catch(() => {});
+  const plain = await uploadPlain(toy.id, bitmaps.get(toy.id), changes.focus ?? null);
+  const saved = await reframe({ ...toy, raw_path: rawPath }, { ...changes, ...plain });
+  const old = [toy.photo_path, toy.thumb_path].filter(Boolean);
+  if (old.length) supabase.storage.from('toys').remove(old).catch(() => {});
   return saved;
 }
 
 export async function deleteToyFiles(toy) {
   const jobs = [];
-  const shown = [toy.image_path, toy.photo_path, ...(toy.media || []).map((m) => m.path)].filter(Boolean);
+  const shown = [toy.image_path, toy.photo_path, toy.thumb_path, ...(toy.media || []).map((m) => m.path)].filter(Boolean);
   if (shown.length) jobs.push(supabase.storage.from('toys').remove(shown));
   if (toy.raw_path) jobs.push(supabase.storage.from('raw').remove([toy.raw_path, cutPath(toy.id), platePath(toy.id)]));
   await Promise.allSettled(jobs);

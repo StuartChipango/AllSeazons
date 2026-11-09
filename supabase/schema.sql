@@ -185,6 +185,9 @@ alter table public.toys add column if not exists has_cutout boolean not null def
 alter table public.toys add column if not exists photo_path text;
 -- More photos and videos for the toy's shop page: [{"path": ..., "type": "image" | "video"}].
 alter table public.toys add column if not exists media jsonb not null default '[]'::jsonb;
+-- A small copy of the plain photo (480 px) for the shop's toy cards, so
+-- phones load a few KB per toy instead of the full photo.
+alter table public.toys add column if not exists thumb_path text;
 
 -- ---------------------------------------------------------------------
 -- Orders.

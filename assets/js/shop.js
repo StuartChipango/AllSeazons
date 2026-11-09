@@ -4,7 +4,7 @@ import {
   priceBands, AUDIENCES, CONDITIONS, AGES, timeLabel,
 } from './lib.js';
 
-const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,quantity,status,image_path,photo_path,media,created_at,approved_at,sold_at';
+const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,quantity,status,image_path,photo_path,thumb_path,media,created_at,approved_at,sold_at';
 const $ = (sel) => document.querySelector(sel);
 
 const state = {
@@ -67,40 +67,65 @@ async function loadAll() {
 
 // Columns the database may not have yet (until the latest schema is run):
 // the shop then loads without them instead of showing an error.
-const NEWER_COLUMNS = ['media'];
+const NEWER_COLUMNS = ['media', 'thumb_path'];
+let columnsInUse = TOY_COLUMNS;
 
-async function loadToys(columns = TOY_COLUMNS) {
-  const [live, sold] = await Promise.all([
+// The Sold section is only fetched when someone opens it.
+let soldLoaded = false;
+async function loadSold() {
+  const { data } = await supabase.from('toys').select(columnsInUse).eq('status', 'sold').not('image_path', 'is', null)
+    .order('sold_at', { ascending: false, nullsFirst: false }).limit(200);
+  state.sold = data || [];
+  soldLoaded = true;
+}
+
+async function loadToys(columns = columnsInUse) {
+  const [live, soldCount] = await Promise.all([
     supabase.from('toys').select(columns).in('status', ['available', 'reserved'])
       .order('approved_at', { ascending: false, nullsFirst: false }).limit(2000),
-    supabase.from('toys').select(columns).eq('status', 'sold').not('image_path', 'is', null)
-      .order('sold_at', { ascending: false, nullsFirst: false }).limit(400),
+    supabase.from('toys').select('id', { count: 'exact', head: true }).eq('status', 'sold').not('image_path', 'is', null),
   ]);
   if (live.error?.code === '42703' && columns === TOY_COLUMNS) {
-    return loadToys(TOY_COLUMNS.split(',').filter((c) => !NEWER_COLUMNS.includes(c)).join(','));
+    columnsInUse = TOY_COLUMNS.split(',').filter((c) => !NEWER_COLUMNS.includes(c)).join(',');
+    return loadToys(columnsInUse);
   }
   if (live.error) {
     $('#status').textContent = friendlyError(live.error);
     return;
   }
   state.toys = live.data || [];
-  state.sold = sold.data || [];
+  state.soldCount = soldCount.count ?? state.sold.length;
+  if (soldLoaded) await loadSold();
   render();
 }
 
 let reloadTimer;
 function scheduleReload() {
   clearTimeout(reloadTimer);
-  reloadTimer = setTimeout(loadToys, 600);
+  reloadTimer = setTimeout(loadToys, 2000);
+}
+
+// Staff change toys all the time while uploading and reviewing. Only
+// reload when a change can show in the shop.
+const SHOP_STATUSES = ['available', 'reserved', 'sold'];
+function onToyChange(change) {
+  if (change.eventType === 'DELETE') return scheduleReload();
+  const t = change.new || {};
+  const known = state.toys.some((x) => x.id === t.id) || state.sold.some((x) => x.id === t.id);
+  if (SHOP_STATUSES.includes(t.status) || known) scheduleReload();
 }
 
 function subscribeLive() {
   if (!configured) return;
   supabase.channel('shop-toys')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'toys' }, scheduleReload)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'toys' }, onToyChange)
     .subscribe();
-  setInterval(loadToys, 90_000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) scheduleReload(); });
+  setInterval(() => { if (!document.hidden) loadToys(); }, 120_000);
+  let hiddenAt = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) hiddenAt = Date.now();
+    else if (Date.now() - hiddenAt > 30_000) scheduleReload();
+  });
 }
 
 // ------------------------------------------------------------- filters
@@ -173,6 +198,8 @@ function priceHtml(t) {
 
 // The website shows the plain photo; the framed picture is for social media.
 const photoUrl = (t) => imageUrl(t?.photo_path || t?.image_path);
+// Toy cards use the small copy: a few KB each instead of the full photo.
+const thumbUrl = (t) => imageUrl(t?.thumb_path || t?.photo_path || t?.image_path);
 
 function inCart(id) {
   return state.cart.find((c) => c.id === id);
@@ -201,7 +228,7 @@ function cardHtml(t) {
       <button class="pic" data-open="${t.id}" aria-label="See ${esc(t.name)}">
         ${ribbon}<span class="cond ${t.condition === 'new' ? 'new' : ''}">${esc(CONDITIONS[t.condition] || 'Used')}</span>
         ${moreHtml(t)}
-        <img src="${esc(photoUrl(t))}" alt="${esc(t.name)}" loading="lazy" width="540" height="540">
+        <img src="${esc(thumbUrl(t))}" alt="${esc(t.name)}" loading="lazy" decoding="async" width="480" height="480">
       </button>
       <div class="body">
         <div class="name">${esc(t.name)}</div>
@@ -212,12 +239,20 @@ function cardHtml(t) {
     </article>`;
 }
 
-function render() {
+// Cards are added a screenful at a time as you scroll, so a phone never
+// has to draw hundreds of toys at once.
+const PAGE = 24;
+let shown = PAGE;
+let lastHtml = '';
+let pager = null;
+
+function render({ reset = false } = {}) {
+  if (reset) shown = PAGE;
   const forSale = state.toys;
   const specials = forSale.filter((t) => isSpecial(t) && t.status === 'available');
   $('#countShop').textContent = `(${forSale.filter((t) => t.status === 'available').length})`;
   $('#countSpecials').textContent = `(${specials.length})`;
-  $('#countSold').textContent = `(${state.sold.length})`;
+  $('#countSold').textContent = `(${state.soldCount ?? state.sold.length})`;
 
   let list = state.view === 'sold' ? state.sold : state.view === 'specials' ? specials : forSale;
   list = sorted(list.filter(matches));
@@ -228,13 +263,42 @@ function render() {
 
   $('#soldIntro').hidden = state.view !== 'sold';
   if (state.view === 'sold') {
-    $('#soldIntro').textContent = `${state.sold.length} toys have found new homes. This is the kind of thing we stock. Message us if you are looking for something similar!`;
+    $('#soldIntro').textContent = `${state.soldCount ?? state.sold.length} toys have found new homes. This is the kind of thing we stock. Message us if you are looking for something similar!`;
   }
-  $('#grid').innerHTML = list.map(cardHtml).join('');
+  // Nothing changed (a background refresh): leave the page alone, so
+  // pictures do not flicker and the page does not jump.
+  const html = list.slice(0, shown).map(cardHtml).join('');
+  if (html !== lastHtml) {
+    $('#grid').innerHTML = html;
+    lastHtml = html;
+  }
+  watchMore(list.length > shown);
   $('#status').textContent = list.length ? '' : state.view === 'specials'
     ? 'No specials right now. Check back soon!'
     : 'No toys match. Try a different filter.';
   renderCartCount();
+}
+
+function watchMore(more) {
+  let sentinel = $('#more');
+  if (!sentinel) {
+    sentinel = document.createElement('div');
+    sentinel.id = 'more';
+    sentinel.className = 'more-sentinel';
+    $('#grid').after(sentinel);
+  }
+  sentinel.hidden = !more;
+  if (!pager && 'IntersectionObserver' in window) {
+    pager = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting) && !sentinel.hidden) {
+        shown += PAGE;
+        render();
+      }
+    }, { rootMargin: '800px 0px' });
+    pager.observe(sentinel);
+  } else if (!('IntersectionObserver' in window)) {
+    shown = Infinity;
+  }
 }
 
 function renderCartCount() {
@@ -522,11 +586,18 @@ document.addEventListener('click', (e) => {
     const v = el.dataset.value;
     state.filter[el.dataset.key] = el.dataset.key === 'band' ? Number(v) : v;
     syncChips();
-    render();
+    render({ reset: true });
   } else if (el.dataset.view) {
     state.view = el.dataset.view;
     document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t === el)));
-    render();
+    if (state.view === 'sold' && !soldLoaded) {
+      $('#grid').innerHTML = '';
+      lastHtml = '';
+      $('#status').textContent = 'Loading…';
+      loadSold().then(() => render({ reset: true }));
+    } else {
+      render({ reset: true });
+    }
   } else if (el.dataset.add) {
     addToCart(el.dataset.add);
   } else if (el.dataset.open) {
@@ -576,7 +647,7 @@ document.addEventListener('change', (e) => {
     renderCart();
   } else if (['category', 'age', 'sort'].includes(el.id)) {
     state.filter[el.id] = el.value;
-    render();
+    render({ reset: true });
   }
 });
 
@@ -590,7 +661,7 @@ document.addEventListener('submit', (e) => {
 let searchTimer;
 $('#search').addEventListener('input', (e) => {
   clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => { state.filter.q = e.target.value.trim(); render(); }, 150);
+  searchTimer = setTimeout(() => { state.filter.q = e.target.value.trim(); render({ reset: true }); }, 150);
 });
 
 $('#toyDialog').addEventListener('close', () => {

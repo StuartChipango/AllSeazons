@@ -130,6 +130,7 @@ alter table public.toys add column if not exists focus jsonb;
 alter table public.toys add column if not exists has_cutout boolean not null default false;
 alter table public.toys add column if not exists photo_path text;
 alter table public.toys add column if not exists media jsonb not null default '[]'::jsonb;
+alter table public.toys add column if not exists thumb_path text;
 create sequence if not exists public.order_code_seq start 1001;
 create table if not exists public.orders (
 id uuid primary key default gen_random_uuid(),

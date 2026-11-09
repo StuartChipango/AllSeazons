@@ -26,7 +26,27 @@ function countBy(list, key) {
   return [...m.entries()].sort((a, b) => b[1] - a[1]);
 }
 
+// Toys from before small shop pictures existed get one, a few at a time,
+// in the background while someone with the Stock job has the app open.
+let thumbing = false;
+async function backfillThumbs() {
+  if (thumbing || !can('stock')) return;
+  thumbing = true;
+  try {
+    const { data, error } = await supabase.from('toys').select('id, photo_path, thumb_path')
+      .is('thumb_path', null).not('photo_path', 'is', null).limit(40);
+    if (error || !data?.length) return;
+    const { makeThumb } = await import('./photos.js');
+    for (const t of data) {
+      try { await makeThumb(t); } catch (e) { console.warn('thumbnail', t.id, e.message); }
+    }
+  } finally {
+    thumbing = false;
+  }
+}
+
 export async function show(main) {
+  setTimeout(backfillThumbs, 1500);
   const since = weekStart();
   const sixty = new Date(Date.now() - 60 * 86400e3).toISOString();
   const [week, open, toPack, live, review, soldItems, slow] = await Promise.all([
@@ -37,7 +57,7 @@ export async function show(main) {
     supabase.from('toys').select('id', { count: 'exact', head: true }).eq('status', 'review'),
     supabase.from('order_items').select('name, qty, price, toys(category, audience, condition), orders!inner(status, paid_at)')
       .in('orders.status', ['paid', 'packed', 'sent', 'delivered']).order('id', { ascending: false }).limit(2000),
-    supabase.from('toys').select('id, name, code, price, image_path, approved_at').eq('status', 'available')
+    supabase.from('toys').select('*').eq('status', 'available')
       .lt('approved_at', sixty).order('approved_at').limit(12),
   ]);
 
@@ -71,7 +91,7 @@ export async function show(main) {
       <h2>Slow movers</h2><p class="sub">In the shop for over 60 days. Try a special price.</p>
       <div style="display:flex;gap:10px;overflow-x:auto">${(slow.data || []).map((t) => `
         <a href="#stock" style="width:110px;flex:none;text-decoration:none;font-size:13px">
-          <img src="${esc(imageUrl(t.image_path))}" alt="" style="width:110px;height:110px;border-radius:12px;object-fit:cover">
+          <img src="${esc(imageUrl(t.thumb_path || t.image_path))}" alt="" loading="lazy" style="width:110px;height:110px;border-radius:12px;object-fit:cover">
           ${esc(t.name)}<br><strong>${kwacha(t.price)}</strong></a>`).join('') || '<p class="sub">None. Stock is moving well.</p>'}</div>
     </section>
     <div class="mobile-more">${can('stock') ? '<a class="btn ghost" href="#boxes">Boxes</a>' : ''}<a class="btn ghost" href="#settings">${can('owner') ? 'Settings' : 'My account'}</a><a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
