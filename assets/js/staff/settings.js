@@ -8,7 +8,7 @@ let root = null;
 export async function show(main) {
   root = main;
   if (!can('owner')) {
-    root.innerHTML = `<div class="page-head"><h1>My account</h1></div>${accountHtml()}`;
+    root.innerHTML = `${meTop()}<div class="page-head"><h1>My account</h1></div>${accountHtml()}`;
     wireAccount();
     return;
   }
@@ -23,6 +23,21 @@ export async function show(main) {
 export function leave() { root = null; }
 
 const signIn = (m) => m.login || m.email;
+
+// The four season friends on the Me page. Small pictures, loaded last.
+function meTop() {
+  const me = shared.me || {};
+  const name = me.name || me.login || me.email || '';
+  const pals = [['spri', 34], ['sammy', 51], ['auty', 68], ['winnie', 84]];
+  return `
+    <div class="me-top" aria-hidden="true">${pals.map(([m, left]) =>
+      `<img class="mascot" src="../assets/img/mascots/${m}.webp" alt="" width="64" height="78" loading="lazy" decoding="async" style="left:${left}%">`).join('')}</div>
+    <div class="me-id">
+      <div class="me-av" aria-hidden="true">${esc(name.trim()[0]?.toUpperCase() || '?')}</div>
+      <div><div class="display" style="font-size:24px;font-weight:700">${esc(name.split('@')[0])}</div>
+        <small>${esc((me.roles || []).map((r) => ROLE_LABELS[r]).join(', '))}</small></div>
+    </div>`;
+}
 const ROLE_HELP = {
   owner: 'Everything, including settings, prices, staff and refunds',
   stock: 'Photos, review, stock and boxes',
@@ -113,7 +128,7 @@ function activityHtml(activity, staff) {
 
 function render(towns, staff, activity) {
   const s = shared.settings;
-  root.innerHTML = `
+  root.innerHTML = `${meTop()}
     <div class="page-head"><h1>Settings</h1></div>
     ${accountHtml()}
     ${teamHtml(staff)}

@@ -14,67 +14,92 @@ let running = 0;
 let root = null;
 const PARALLEL = 2;
 let notice = null;
+let moreOpen = false;
 
 export async function show(main) {
   root = main;
   if (opts.price === null) opts.price = shared.tiers[0] ?? 50;
   render();
+  // Photos picked from the + menu.
+  if (shared.pendingFiles) {
+    const files = shared.pendingFiles;
+    shared.pendingFiles = null;
+    addFiles(files);
+  }
 }
 
 export function leave() {
+  root?.classList.remove('page-snap');
+  root?.removeAttribute('ondragover');
+  if (root) root.ondragover = root.ondragleave = root.ondrop = null;
   root = null;
 }
 
+const CAMERA = '<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>';
+const GALLERY = '<svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg>';
+
 function render() {
   if (!root) return;
+  root.classList.add('page-snap');
   const done = jobs.filter((j) => j.state === 'done').length;
+  const named = jobs.filter((j) => j.state === 'done' && j.toy && !/^Unnamed/i.test(j.toy.name)).length;
   root.innerHTML = `
-    <div class="page-head"><h1>Add toys</h1></div>
-    <p class="lead">Pick the price for this batch, then add photos. Each photo becomes a toy with its name, frame and USED/NEW tag. You check them on the Review page before they go in the shop.</p>
+    <div class="page-head"><a class="back" href="#home" aria-label="Back">‹</a><h1>Snap new toys</h1></div>
 
-    <div class="card-box opts">
-      <span class="lbl">Price for this batch</span>
-      <div class="chips" id="tierChips">${shared.tiers.map((p) =>
-        `<button class="chip" data-opt="price" data-value="${p}" aria-pressed="${p === opts.price}">${kwacha(p)}</button>`).join('')}
-        <label class="chip" style="gap:4px">Other K<input type="number" min="1" id="otherPrice" style="width:80px;min-height:28px;padding:2px 6px" value="${shared.tiers.includes(opts.price) ? '' : opts.price}"></label>
-      </div>
-      <span class="lbl" style="margin-top:10px">Naming</span>
-      ${seg('naming', namingMode(), [['device', 'On this device (free)'], ['online', 'Online AI (needs a key)']])}
-      <span class="lbl" style="margin-top:10px">Several photos of one toy</span>
-      ${seg('group', opts.group, [['on', 'Group them into one toy'], ['off', 'Every photo is a new toy']])}
-      <small style="color:var(--muted)">Take the angles of one toy one after another. A video goes with the photo just before it.</small>
-      <span class="lbl" style="margin-top:10px">Boys, girls or neutral</span>
-      ${seg('audience', opts.audience, [['', 'Let AI decide'], ['boys', 'Boys'], ['girls', 'Girls'], ['neutral', 'Neutral']])}
-      <span class="lbl" style="margin-top:10px">Used or new</span>
-      ${seg('condition', opts.condition, [['', 'Let AI decide'], ['used', 'Used'], ['new', 'New']])}
-      <label class="field" style="margin:10px 0 0;max-width:340px"><span>Box (optional)</span>
-        <select id="boxSel"><option value="">No box</option>${shared.boxes.map((b) =>
-          `<option value="${esc(b.id)}" ${b.id === opts.box_id ? 'selected' : ''}>${esc(b.id)}${b.supplier ? ' · ' + esc(b.supplier) : ''}</option>`).join('')}</select>
-      </label>
+    <span class="lbl">Price for this batch</span>
+    <div class="snap-price" id="tierChips">${shared.tiers.map((p) =>
+      `<button class="chip" data-opt="price" data-value="${p}" aria-pressed="${p === opts.price}">${kwacha(p)}</button>`).join('')}
+      <label class="chip" style="gap:4px">Other K<input type="number" min="1" id="otherPrice" style="width:72px;min-height:28px;padding:2px 6px;border-width:1.5px" value="${shared.tiers.includes(opts.price) ? '' : opts.price}"></label>
     </div>
 
-    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Add photos">
+    <section class="snap-card" aria-live="polite">
+      <h2>${jobs.length ? `${done} of ${jobs.length} ready` : 'Ready when you are'}</h2>
+      <p>${jobs.length ? (done < jobs.length ? 'Keep going! Each toy gets its name while you take the next one.' : `${named} named. Check them in Review.`) : 'Tap the orange button. One photo per toy, or a few angles in a row.'}</p>
+      <img class="mascot" src="../assets/img/mascots/spri.webp" alt="" width="84" height="100" loading="lazy" decoding="async">
+    </section>
+    ${notice ? `<p class="${notice.bad ? 'st bad' : 'st ok'}" role="status">${esc(notice.text)}</p>` : ''}
+
+    ${jobs.length ? `<ul class="queue">${jobs.map((j) => `
+      <li>
+        ${j.video ? '<span class="vid-thumb" aria-hidden="true">▶</span>' : `<img src="${esc(j.thumb)}" alt="">`}
+        <div><div class="nm">${esc(j.toy?.name || (j.state === 'done' ? j.file.name : 'Naming…'))}</div>
+          <div class="st ${j.state === 'done' ? 'ok' : j.state === 'error' ? 'bad' : ''}">${esc(j.step)}</div></div>
+        <div>${j.toy ? `<span class="pill">${esc(j.toy.code)}</span>` : ''}</div>
+      </li>`).join('')}</ul>` : ''}
+
+    <details class="more-box" id="moreOpts" ${moreOpen ? 'open' : ''}><summary>More options</summary>
+      <div class="card-box opts">
+        <span class="lbl">Naming</span>
+        ${seg('naming', namingMode(), [['device', 'On this device (free)'], ['online', 'Online AI (needs a key)']])}
+        <span class="lbl" style="margin-top:10px">Several photos of one toy</span>
+        ${seg('group', opts.group, [['on', 'Group them into one toy'], ['off', 'Every photo is a new toy']])}
+        <small style="color:var(--muted)">Take the angles of one toy one after another. A video goes with the photo just before it.</small>
+        <span class="lbl" style="margin-top:10px">Boys, girls or neutral</span>
+        ${seg('audience', opts.audience, [['', 'Let AI decide'], ['boys', 'Boys'], ['girls', 'Girls'], ['neutral', 'Neutral']])}
+        <span class="lbl" style="margin-top:10px">Used or new</span>
+        ${seg('condition', opts.condition, [['', 'Let AI decide'], ['used', 'Used'], ['new', 'New']])}
+        <label class="field" style="margin:10px 0 0;max-width:340px"><span>Box (optional)</span>
+          <select id="boxSel"><option value="">No box</option>${shared.boxes.map((b) =>
+            `<option value="${esc(b.id)}" ${b.id === opts.box_id ? 'selected' : ''}>${esc(b.id)}${b.supplier ? ' · ' + esc(b.supplier) : ''}</option>`).join('')}</select>
+        </label>
+        <div class="row-actions" style="justify-content:flex-start;margin-top:12px">
+          <label class="btn ghost small">Choose a folder<input type="file" id="folder" webkitdirectory multiple hidden></label>
+          <label class="btn ghost small">Add a Claude pack<input type="file" id="pack" accept=".zip,.csv,application/zip,text/csv,image/*" multiple hidden></label>
+        </div>
+        <small style="color:var(--muted)">Claude pack: the .zip Claude makes from your photos in chat, with names and groups already filled in.</small>
+      </div>
+    </details>
+
+    <div class="drop drop-desk" id="drop" tabindex="0" role="button" aria-label="Add photos">
       <h2>Drop photos here</h2>
-      <p>or choose them from your phone or laptop. JPEG or PNG. Name a file like “barbie camper.jpg” and that name is used.</p>
-      <div class="row-actions" style="justify-content:center">
-        <label class="btn">Choose photos or videos<input type="file" id="files" accept="image/*,video/*" multiple hidden></label>
-        <label class="btn ghost">Choose a folder<input type="file" id="folder" webkitdirectory multiple hidden></label>
-        <label class="btn ghost">Add a Claude pack<input type="file" id="pack" accept=".zip,.csv,application/zip,text/csv,image/*" multiple hidden></label>
-      </div>
-      <p style="font-size:13px;color:var(--muted)">Claude pack: the .zip Claude makes from your photos in chat, with names and groups already filled in. You can also drop photos together with their labels.csv.</p>
+      <p>or use the buttons below. Name a file like “barbie camper.jpg” and that name is used.</p>
     </div>
-    ${notice ? `<p class="${notice.bad ? 'st bad' : 'st ok'}" role="status" style="margin-top:10px">${esc(notice.text)}</p>` : ''}
 
-    ${jobs.length ? `
-      <div class="page-head" style="margin-top:18px"><h2 style="margin-right:auto">This session: ${done} of ${jobs.length} ready</h2>
-        ${done ? '<a class="btn" href="#review">Review them</a>' : ''}</div>
-      <ul class="queue">${jobs.map((j) => `
-        <li>
-          ${j.video ? '<span class="vid-thumb" aria-hidden="true">▶</span>' : `<img src="${esc(j.thumb)}" alt="">`}
-          <div><div>${esc(j.toy?.name || j.file.name)}</div>
-            <div class="st ${j.state === 'done' ? 'ok' : j.state === 'error' ? 'bad' : ''}">${esc(j.step)}</div></div>
-          <div>${j.toy ? `<span class="pill">${esc(j.toy.code)}</span>` : ''}</div>
-        </li>`).join('')}</ul>` : ''}
+    <div class="shutter">
+      <label class="gal" aria-label="Pick from gallery">${GALLERY}<input type="file" id="files" accept="image/*,video/*" multiple hidden></label>
+      <label class="shoot" aria-label="Take photo"><span>${CAMERA}</span><input type="file" id="camera" accept="image/*" capture="environment" hidden></label>
+      <a class="btn" id="reviewGo" href="#review">Review${done ? ' ' + done : ''}</a>
+    </div>
   `;
   wire();
 }
@@ -87,14 +112,16 @@ function wire() {
     else opts[b.dataset.seg] = b.dataset.value;
     render();
   });
+  $('#moreOpts', root).ontoggle = (e) => { moreOpen = e.target.open; };
   $('#boxSel', root).onchange = (e) => { opts.box_id = e.target.value; };
   const drop = $('#drop', root);
-  $('#files', root).onchange = (e) => addFiles(e.target.files);
-  $('#folder', root).onchange = (e) => addFiles(e.target.files);
-  $('#pack', root).onchange = (e) => addFiles(e.target.files);
-  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
-  drop.ondragleave = () => drop.classList.remove('over');
-  drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); };
+  for (const id of ['#files', '#camera', '#folder', '#pack']) {
+    $(id, root).onchange = (e) => { const files = [...e.target.files]; e.target.value = ''; addFiles(files); };
+  }
+  root.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
+  root.ondragleave = () => drop.classList.remove('over');
+  root.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); };
+  drop.onclick = () => $('#files', root).click();
   drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') $('#files', root).click(); };
 }
 

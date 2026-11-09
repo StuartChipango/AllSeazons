@@ -1,6 +1,6 @@
 import { esc, kwacha, METHOD_LABEL, CONDITIONS, waLink, timeLabel } from '../lib.js';
 import { supabase, imageUrl, friendlyError } from '../db.js';
-import { refreshBadges } from './app.js';
+import { refreshBadges, can } from './app.js';
 import { $, $$, toast, confirmBox, ago, dateLabel, busy } from './ui.js';
 
 const TABS = [
@@ -16,13 +16,13 @@ const STATUS_LABEL = {
   delivered: 'Delivered', cancelled: 'Cancelled', expired: 'Hold expired',
 };
 const NEXT = {
-  held: [['confirmed', 'Confirm (keep holding)', 'ghost'], ['paid', 'Mark paid', '']],
-  confirmed: [['paid', 'Mark paid', '']],
-  paid: [['packed', 'Mark packed', '']],
-  packed: [['sent', 'Mark sent', '']],
-  sent: [['delivered', 'Mark delivered', '']],
+  held: [['confirmed', 'Confirm (keep holding)', 'ghost'], ['paid', 'Mark paid', 'go']],
+  confirmed: [['paid', 'Mark paid', 'go']],
+  paid: [['packed', 'Mark packed', 'go']],
+  packed: [['sent', 'Mark sent', 'go']],
+  sent: [['delivered', 'Mark delivered', 'go']],
   cancelled: [['held', 'Reopen', 'ghost']],
-  expired: [['held', 'Reopen', 'ghost'], ['paid', 'Mark paid', '']],
+  expired: [['held', 'Reopen', 'ghost'], ['paid', 'Mark paid', 'go']],
 };
 
 let root = null;
@@ -64,7 +64,7 @@ function paintHold(el) {
   const left = new Date(el.dataset.until).getTime() - Date.now();
   if (left <= 0) { el.textContent = 'Hold has run out'; el.classList.add('late'); return; }
   const m = Math.round(left / 60000);
-  el.textContent = `Held until ${timeLabel(el.dataset.until)} (${m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min'} left)`;
+  el.textContent = `Held ${m >= 60 ? Math.floor(m / 60) + 'h ' + (m % 60) + 'm' : m + 'm'} more (until ${timeLabel(el.dataset.until)})`;
   el.classList.toggle('late', m < 15);
 }
 
@@ -76,15 +76,24 @@ function orderCard(o) {
     `<button class="btn small ${cls}" data-status="${s}" data-id="${o.id}">${label}</button>`).join('');
   const canCancel = !['cancelled', 'expired', 'delivered'].includes(o.status);
   const canSticker = ['paid', 'packed', 'sent'].includes(o.status) && o.channel === 'online';
+  const count = items.reduce((n, it) => n + it.qty, 0);
+  const colors = ['#f9ddea', '#dce6f6', '#e8f5c8', '#fef0c7', '#fde1d3'];
+  const color = colors[(o.customer_name || '?').charCodeAt(0) % colors.length];
   return `
     <article class="order" data-id="${o.id}">
       <div class="head">
-        <span class="code">${esc(o.code)}</span>
-        <span class="pill ${o.status}">${STATUS_LABEL[o.status]}</span>
-        <span class="when">${ago(o.created_at)} · ${dateLabel(o.created_at)}</span>
+        <span class="av" style="background:${color}" aria-hidden="true">${esc((o.customer_name || '?').trim()[0]?.toUpperCase() || '?')}</span>
+        <div class="who-line">
+          <b>${esc(o.customer_name)}</b> <span class="when">· ${ago(o.created_at)}</span>
+          <div>${count} toy${count === 1 ? '' : 's'} · <b>${kwacha(o.total)}</b> · ${esc(place)}</div>
+        </div>
         ${canSticker ? `<label class="sel"><input type="checkbox" data-pick="${o.id}" ${picked.has(o.id) ? 'checked' : ''}> Sticker</label>` : ''}
       </div>
-      ${o.status === 'held' && o.hold_until ? `<div class="hold" data-until="${o.hold_until}"></div>` : ''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span class="pill ${o.status}">${STATUS_LABEL[o.status]}</span><span class="code">${esc(o.code)}</span>
+        ${o.status === 'held' && o.hold_until ? `<span class="hold" style="margin:0" data-until="${o.hold_until}"></span>` : ''}
+      </div>
+      <details><summary>Details · ${dateLabel(o.created_at)}</summary>
       <div class="who">
         <div><b>Name</b> ${esc(o.customer_name)}</div>
         ${o.phone ? `<div><b>Phone</b> <a href="${esc(waLink(o.phone, `Hi ${o.customer_name}, thank you for your All Seazons order ${o.code}!`))}" target="_blank" rel="noopener">${esc(o.phone)} (WhatsApp)</a></div>` : ''}
@@ -92,6 +101,7 @@ function orderCard(o) {
         ${o.address ? `<div><b>Address</b> ${esc(o.address)}</div>` : ''}
         ${o.note ? `<div><b>Note</b> ${esc(o.note)}</div>` : ''}
       </div>
+      </details>
       <div class="things">${items.map((it) => `
         <div class="thing"><img src="${esc(imageUrl(it.image_path))}" alt="" loading="lazy">
           <div>${esc(it.name)}${it.qty > 1 ? ' ×' + it.qty : ''}</div><div style="color:var(--muted)">${esc(CONDITIONS[it.condition] || '')} · ${kwacha(it.price * it.qty)}</div></div>`).join('')}
@@ -114,7 +124,8 @@ function render() {
   const stickerIds = [...picked].join(',');
   root.innerHTML = `
     <div class="page-head">
-      <h1>Orders</h1>
+      <h1>Inbox</h1>
+      ${can('sales') ? '<a class="btn small ghost" href="#sale">Shop sale</a><a class="btn small ghost" href="#sale?wa">WhatsApp order</a>' : ''}
       ${picked.size ? `<a class="btn" href="sticker.html?ids=${stickerIds}" target="_blank" rel="noopener">Print ${picked.size} sticker${picked.size > 1 ? 's' : ''}</a>` : ''}
     </div>
     <div class="otabs">

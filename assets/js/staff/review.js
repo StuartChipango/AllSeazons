@@ -25,25 +25,27 @@ function card(t) {
     : t.needs_attention ? `Not sure about this one. Please check the name.${ai.alternatives?.length ? ` It might also be: ${esc(ai.alternatives.join(', '))}.` : ''}` : '';
   return `
     <article class="rcard ${t.needs_attention ? 'attn' : ''}" data-id="${t.id}">
-      <div class="pic"><img src="${esc(imageUrl(t.image_path))}" alt="${esc(t.name)}" loading="lazy"></div>
+      <div class="pic"><img src="${esc(imageUrl(t.image_path))}" alt="${esc(t.name)}" loading="lazy" decoding="async"></div>
       <div class="body">
-        ${t.image_path ? mediaHtml(t) : ''}
         ${t.image_path ? '' : '<label class="btn soft small">Add a photo<input type="file" accept="image/*" data-f="photo" hidden></label>'}
         ${flag ? `<div class="flag">${flag}</div>` : ''}
         ${ai.error && t.raw_path ? '<button class="btn soft small" data-act="ai">Try AI again</button>' : ''}
-        <label class="field"><span>Small top line (optional)</span><input type="text" data-f="tagline" value="${esc(t.tagline || '')}" maxlength="30" placeholder="e.g. Big &amp; Small"></label>
-        <label class="field"><span>Name</span><input type="text" data-f="name" value="${esc(t.name)}" maxlength="40"></label>
+        <label><span class="lbl">Name</span><input type="text" class="nm-input" data-f="name" value="${esc(t.name)}" maxlength="40"></label>
         ${seg('audience', t.audience, [['boys', 'Boys'], ['girls', 'Girls'], ['neutral', 'Neutral']])}
         ${seg('condition', t.condition, [['used', 'Used'], ['new', 'New']])}
         <div class="mini">
           <label class="field"><span>Price</span><select data-f="price">${priceOptions.map((p) => `<option value="${p}" ${p === t.price ? 'selected' : ''}>${kwacha(p)}</option>`).join('')}<option value="other">Other…</option></select></label>
-          <label class="field"><span>How many</span><input type="number" min="1" data-f="quantity" value="${t.quantity}"></label>
           <label class="field"><span>Type</span><select data-f="category"><option value="">—</option>${shared.categories.map((c) => `<option ${c === t.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
           <label class="field"><span>Age</span><select data-f="age_range"><option value="">—</option>${AGES.map((a) => `<option ${a === t.age_range ? 'selected' : ''}>${a}</option>`).join('')}</select></label>
+          <label class="field"><span>How many</span><input type="number" min="1" data-f="quantity" value="${t.quantity}"></label>
         </div>
-        <div class="row-actions">
-          <button class="btn danger small" data-act="delete">Delete</button>
-          <button class="btn small" data-act="approve">Approve</button>
+        <details><summary>More: top line, photos and video</summary>
+          <label class="field" style="margin-top:8px"><span>Small top line (optional)</span><input type="text" data-f="tagline" value="${esc(t.tagline || '')}" maxlength="30" placeholder="e.g. Big &amp; Small"></label>
+          ${t.image_path ? mediaHtml(t) : ''}
+        </details>
+        <div class="acts">
+          <button class="act" data-act="delete"><span style="background:#fff">✕</span>Delete</button>
+          <button class="act" data-act="approve"><span style="background:var(--green)">✓</span>To the shop</button>
         </div>
       </div>
     </article>`;
@@ -53,13 +55,16 @@ function render() {
   if (!root) return;
   root.innerHTML = `
     <div class="page-head">
+      <a class="back" href="#home" aria-label="Back">‹</a>
       <h1>Review</h1>
-      ${unnamed().length ? `<button class="btn soft" id="aiAll">Try AI again for ${unnamed().length}</button>` : ''}
-      ${toys.length ? `<button class="btn" id="approveAll">Approve all ${toys.length}</button>` : ''}
+      ${toys.length > 1 ? `<span class="review-count" id="reviewCount">1 of ${toys.length}</span>` : ''}
+      ${unnamed().length ? `<button class="btn soft small" id="aiAll">Try AI again for ${unnamed().length}</button>` : ''}
+      ${toys.length ? `<button class="btn small" id="approveAll">Approve all ${toys.length}</button>` : ''}
     </div>
-    <p class="lead">Check each picture. Fix the name, Boys/Girls/Neutral or Used/New and the picture redraws itself. Approved toys appear in the shop straight away.</p>
-    ${toys.length ? `<div class="review-grid">${toys.map(card).join('')}</div>`
-      : `<div class="card-box"><p>Nothing waiting for review.</p><a class="btn" href="#upload">Add toys</a></div>`}`;
+    ${toys.length ? `<p class="lead">Fix anything that is wrong, then tap <b>To the shop</b>. Swipe sideways for the next toy.</p>
+      <div class="review-grid" id="reviewGrid">${toys.map(card).join('')}</div>`
+      : `<div class="card-box review-empty"><img class="mascot" src="../assets/img/mascots/winnie.webp" alt="" width="110" height="164" loading="lazy" decoding="async">
+          <h2>All done!</h2><p>Nothing waiting for review.</p><a class="btn" href="#upload">Snap new toys</a></div>`}`;
   wire();
 }
 
@@ -121,6 +126,16 @@ function wire() {
     render();
   });
 
+  const grid = $('#reviewGrid', root);
+  if (grid && !grid.dataset.wired) {
+    grid.dataset.wired = '1';
+    grid.addEventListener('scroll', () => {
+      const n = $('#reviewCount', root);
+      if (!n || !grid.firstElementChild) return;
+      const i = Math.round(grid.scrollLeft / grid.firstElementChild.offsetWidth);
+      n.textContent = `${Math.min(i + 1, toys.length)} of ${toys.length}`;
+    }, { passive: true });
+  }
   $$('.rcard', root).forEach((el) => {
     if (el.dataset.wired) return;
     el.dataset.wired = '1';
@@ -172,9 +187,9 @@ function wire() {
       render();
     });
     el.querySelector('[data-act="approve"]').addEventListener('click', async (e) => {
-      busy(e.target, true);
+      const b = e.currentTarget; busy(b, true);
       const { data, error } = await supabase.rpc('approve_toys', { p_ids: [t.id] });
-      if (error || !data) { busy(e.target, false); return toast(error ? friendlyError(error) : 'Could not approve this toy.', true); }
+      if (error || !data) { busy(b, false); return toast(error ? friendlyError(error) : 'Could not approve this toy.', true); }
       toys = toys.filter((x) => x.id !== t.id);
       toast(`${t.name} is in the shop`);
       render();

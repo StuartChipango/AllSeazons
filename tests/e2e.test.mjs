@@ -63,7 +63,7 @@ test('photos become framed toys waiting for review', async () => {
   await staff.setInputFiles('#files', [photo('toy1.jpg'), photo('toy2.jpg'), photo('toy3.jpg')]);
   await staff.getByText('3 of 3 ready').waitFor({ timeout: 30000 });
   await shot(staff, '01-upload');
-  await staff.click('text=Review them');
+  await staff.click('#reviewGo');
   await staff.locator('.rcard').first().waitFor();
   assert.equal(await staff.locator('.rcard').count(), 3);
   const names = await staff.locator('.rcard [data-f=name]').evaluateAll((els) => els.map((e) => e.value));
@@ -116,19 +116,19 @@ test('checkout sends a labelled order to WhatsApp and holds the toys', async () 
   await shopper.locator('.card', { hasText: 'Red Race Car' }).getByRole('button', { name: 'Add to cart' }).click();
   assert.equal(await shopper.locator('#cartCount').textContent(), '2');
   await shopper.click('#cartBtn');
-  await shopper.getByRole('button', { name: 'Continue to checkout' }).click();
   await shopper.fill('#checkout [name=name]', 'Mwila Phiri');
   await shopper.fill('#checkout [name=phone]', '0966 000 111');
   // Yango needs an address.
-  await shopper.getByRole('button', { name: 'Yango delivery' }).click();
-  await shopper.getByRole('button', { name: 'Checkout on WhatsApp' }).click();
+  await shopper.getByRole('button', { name: /Lusaka delivery/ }).click();
+  await shopper.getByRole('button', { name: 'Send order on WhatsApp' }).click();
   await shopper.getByText('Please enter your delivery address.').waitFor();
-  await shopper.getByRole('button', { name: 'Out of town' }).click();
+  await shopper.getByRole('button', { name: /Out of town/ }).click();
   await shopper.selectOption('#checkout [name=town_id]', { label: 'Kitwe' });
-  await shopper.getByText(/Medium parcel \(2 items\)/).waitFor();
+  await shopper.getByText(/medium parcel/).waitFor();
+  await shopper.getByText('Add a note or collection point').click();
   await shopper.fill('#checkout [name=address]', 'Collect at Mazhandu Kitwe');
   await shot(shopper, '04-checkout');
-  await shopper.getByRole('button', { name: 'Checkout on WhatsApp' }).click();
+  await shopper.getByRole('button', { name: 'Send order on WhatsApp' }).click();
   await shopper.getByText('Almost done!').waitFor();
   await shot(shopper, '05-done');
   await shopper.waitForURL('https://wa.me/**', { timeout: 5000 });
@@ -299,6 +299,7 @@ test('toys are named on the device without any key', async () => {
   }));
   h.ai.down = true; // the online AI is not used
   await staff.goto(`${h.url}/staff/#upload`);
+  await staff.locator('#moreOpts').evaluate((d) => { d.open = true; });
   await staff.getByRole('button', { name: 'On this device (free)' }).click();
   await staff.setInputFiles('#files', [photo('toy2.jpg')]);
   await staff.getByText('Yellow Teddy Bear').first().waitFor({ timeout: 30000 });
@@ -321,6 +322,7 @@ test('angles of one toy and its video become one toy with a gallery', async () =
   const clip = join(dir, 'teddy.mp4');
   writeFileSync(clip, Buffer.from('not really a video'));
   await staff.goto(`${h.url}/staff/#upload`);
+  await staff.locator('#moreOpts').evaluate((d) => { d.open = true; });
   await staff.getByRole('button', { name: 'Group them into one toy' }).click();
   await staff.setInputFiles('#files', [photo('toy2.jpg'), second, clip]);
   await staff.getByText(/^Video added to /).waitFor({ timeout: 30000 });
@@ -426,6 +428,54 @@ test('the shop draws toys a screenful at a time and old toys get small pictures'
   const left = (await pg.query("select count(*)::int n from toys where thumb_path is null and photo_path is not null")).rows[0].n;
   await pg.end();
   assert.equal(left, 0, 'every toy got a small picture');
+});
+
+test('on a phone: bottom tabs, the + sheet, a shop sale and a WhatsApp order', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const phone = watch(await ctx.newPage());
+  await phone.goto(`${h.url}/staff/`);
+  await phone.fill('input[name=email]', h.staff.email);
+  await phone.fill('input[name=password]', h.staff.password);
+  await phone.click('#loginForm button[type=submit]');
+  await phone.getByRole('heading', { name: 'Home' }).waitFor();
+  await phone.locator('.stories').waitFor();
+  await shot(phone, '30-phone-home');
+  await phone.click('#plusBtn');
+  await phone.getByRole('heading', { name: "What's new?" }).waitFor();
+  await shot(phone, '31-phone-plus');
+  await phone.getByRole('link', { name: /Shop sale/ }).click();
+  await phone.getByRole('heading', { name: 'Shop sale' }).waitFor();
+  await phone.locator('.pick').first().click();
+  await phone.locator('#saleBar').getByText('1 toy').waitFor();
+  await shot(phone, '32-phone-sale');
+  await phone.getByRole('button', { name: 'Take payment' }).click();
+  await phone.getByRole('button', { name: 'Record sale' }).click();
+  await phone.getByText(/^Sale ORD-\d+ recorded/).waitFor();
+  await phone.getByRole('heading', { name: 'Inbox' }).waitFor();
+
+  await phone.goto(`${h.url}/staff/#sale?wa`);
+  await phone.getByRole('heading', { name: 'WhatsApp order' }).waitFor();
+  await phone.locator('.pick').first().click();
+  await phone.getByRole('button', { name: 'Customer details' }).click();
+  await phone.fill('#waForm [name=name]', 'Bupe Tembo');
+  await phone.fill('#waForm [name=phone]', '0977 222 333');
+  await phone.getByRole('button', { name: 'Hold the toys' }).click();
+  const send = phone.getByRole('link', { name: 'Send summary on WhatsApp' });
+  await send.waitFor();
+  const link = new URL(await send.getAttribute('href'));
+  assert.equal(link.pathname, '/260977222333');
+  assert.match(link.searchParams.get('text'), /Hi Bupe Tembo! Your All Seazons order ORD-\d+ is held/);
+  assert.match(link.searchParams.get('text'), /MTN Money to 0762750240/);
+  await shot(phone, '33-phone-wa-order');
+
+  await phone.goto(`${h.url}/staff/#upload`);
+  await phone.locator('.shutter').waitFor();
+  assert.equal(await phone.locator('.side').isVisible(), false, 'the shutter bar replaces the tabs');
+  await shot(phone, '34-phone-snap');
+  await phone.goto(`${h.url}/staff/#orders`);
+  await phone.locator('.order').first().waitFor();
+  await shot(phone, '35-phone-inbox');
+  await ctx.close();
 });
 
 test('no browser errors along the way', () => {

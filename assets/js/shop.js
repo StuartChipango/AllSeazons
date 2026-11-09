@@ -1,7 +1,7 @@
 import { supabase, imageUrl, friendlyError, configured } from './db.js';
 import {
   esc, kwacha, effectivePrice, isSpecial, parcelSize, courierFee, waLink, orderMessage,
-  priceBands, AUDIENCES, CONDITIONS, AGES, timeLabel,
+  priceBands, AUDIENCES, CONDITIONS, AGES, PAYMENTS, timeLabel,
 } from './lib.js';
 
 const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,quantity,status,image_path,photo_path,thumb_path,media,created_at,approved_at,sold_at';
@@ -16,7 +16,7 @@ const state = {
   view: 'shop',
   filter: { audience: '', condition: '', band: -1, category: '', age: '', q: '', sort: 'new' },
   cart: load('as_cart', []),
-  customer: load('as_customer', { location: 'lusaka', delivery_method: 'pickup' }),
+  customer: load('as_customer', { location: 'lusaka', delivery_method: 'pickup', payment: 'mtn' }),
   step: 'cart',
   lastOrder: null,
   busy: false,
@@ -61,6 +61,7 @@ async function loadAll() {
     $('#announce').hidden = false;
   }
   $('#footWa').href = waLink(state.settings.whatsapp_number, 'Hi All Seazons!');
+  $('#topWa').href = $('#footWa').href;
   await loadToys();
   openFromHash();
 }
@@ -137,10 +138,23 @@ function chipGroup(el, key, options) {
     </button>`).join('');
 }
 
+// A picture for each "what they like" circle, matched on the type's name.
+const LIKE_ICONS = [
+  [/animal|pet|dino/i, '🦁'], [/vehicle|car|truck|train/i, '🚗'], [/dress/i, '👗'], [/doll/i, '🪆'],
+  [/build|block|lego|construct/i, '🧱'], [/learn|educat|book|letter/i, '🔤'], [/plush|soft|teddy/i, '🧸'],
+  [/puzzle/i, '🧩'], [/ball|sport|outdoor/i, '⚽'], [/music|sound/i, '🎵'], [/baby|infant/i, '🍼'],
+  [/game|board/i, '🎲'], [/kitchen|food|pretend/i, '🍳'], [/art|craft|draw/i, '🎨'],
+];
+const likeIcon = (name) => (LIKE_ICONS.find(([re]) => re.test(name)) || [null, '🎁'])[1];
+
 function setupFilters(categories) {
   chipGroup($('#audienceChips'), 'audience', [
     { value: '', label: 'Everyone' },
     ...Object.entries(AUDIENCES).map(([value, a]) => ({ value, label: a.label, dot: a.color })),
+  ]);
+  chipGroup($('#ageChips'), 'age', [
+    { value: '', label: 'All ages' },
+    ...AGES.map((a) => ({ value: a, label: `${a} yrs` })),
   ]);
   chipGroup($('#conditionChips'), 'condition', [
     { value: '', label: 'Used & new' },
@@ -151,14 +165,13 @@ function setupFilters(categories) {
     { value: -1, label: 'Any price' },
     ...state.bands.map((b, i) => ({ value: i, label: b.label })),
   ]);
-  $('#category').innerHTML = '<option value="">All types of toy</option>' +
-    categories.map((c) => `<option>${esc(c)}</option>`).join('');
-  $('#age').innerHTML = '<option value="">All ages</option>' +
-    AGES.map((a) => `<option value="${a}">${a} years</option>`).join('');
+  $('#likes').innerHTML = categories.map((c) => `
+    <button type="button" class="like" data-key="category" data-value="${esc(c)}" aria-pressed="${state.filter.category === c}">
+      <span aria-hidden="true">${likeIcon(c)}</span>${esc(c)}</button>`).join('');
 }
 
 function syncChips() {
-  document.querySelectorAll('#filters .chip').forEach((c) => {
+  document.querySelectorAll('[data-key]').forEach((c) => {
     c.setAttribute('aria-pressed', String(String(state.filter[c.dataset.key]) === c.dataset.value));
   });
 }
@@ -214,6 +227,9 @@ function moreHtml(t) {
   return `<span class="more">${photos > 1 ? `${photos} photos` : ''}${photos > 1 && video ? ' · ' : ''}${video ? '▶ video' : ''}</span>`;
 }
 
+const PLUS = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+const TICK = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+
 function cardHtml(t) {
   const sold = t.status === 'sold';
   const hold = t.status === 'reserved';
@@ -222,7 +238,7 @@ function cardHtml(t) {
     : hold ? '<span class="ribbon hold">On hold</span>'
     : isSpecial(t) ? '<span class="ribbon">Special</span>' : '';
   const button = sold || hold ? ''
-    : `<button class="btn add ${added ? 'in-cart' : ''}" data-add="${t.id}">${added ? 'In cart ✓' : 'Add to cart'}</button>`;
+    : `<button class="add ${added ? 'in-cart' : ''}" data-add="${t.id}" aria-label="${added ? 'In cart' : 'Add to cart'}">${added ? TICK : PLUS}</button>`;
   return `
     <article class="card for-${esc(t.audience || 'neutral')} ${sold ? 'is-sold' : ''} ${hold ? 'is-hold' : ''}" data-id="${t.id}">
       <button class="pic" data-open="${t.id}" aria-label="See ${esc(t.name)}">
@@ -232,10 +248,10 @@ function cardHtml(t) {
       </button>
       <div class="body">
         <div class="name">${esc(t.name)}</div>
-        ${t.age_range ? `<div class="meta">${esc(t.age_range)} yrs</div>` : ''}
         ${sold ? '<div class="meta">Found a new home</div>' : priceHtml(t)}
-        <div class="actions">${button}</div>
+        ${t.age_range ? `<div class="meta">${esc(t.age_range)} yrs</div>` : ''}
       </div>
+      ${button}
     </article>`;
 }
 
@@ -302,8 +318,13 @@ function watchMore(more) {
 }
 
 function renderCartCount() {
-  const n = state.cart.reduce((s, c) => s + c.qty, 0);
+  const lines = cartLines().filter((l) => l.toy && l.toy.status === 'available');
+  const n = lines.reduce((s, c) => s + c.qty, 0);
   $('#cartCount').textContent = n;
+  $('#cartWord').textContent = n === 1 ? 'toy' : 'toys';
+  $('#cartTotal').textContent = `${kwacha(lines.reduce((s, l) => s + effectivePrice(l.toy) * l.qty, 0))} →`;
+  $('#cartBtn').hidden = !n;
+  document.body.classList.toggle('has-cart', n > 0);
 }
 
 // ----------------------------------------------------------- toy detail
@@ -346,7 +367,10 @@ function openToy(t) {
       ${t.description ? `<p>${esc(t.description)}</p>` : ''}
       <p class="meta" style="color:var(--muted);font-size:13px">Toy code ${esc(t.code)}</p>
       ${sold || hold ? (hold ? '<p><strong>On hold</strong> for another customer. It may come back soon.</p>' : '')
-        : `<button class="btn block add ${inCart(t.id) ? 'in-cart' : ''}" data-add="${t.id}">${inCart(t.id) ? 'In cart ✓' : 'Add to cart'}</button>`}
+        : `<div class="toy-actions">
+            <button class="btn ghost" data-add="${t.id}" ${inCart(t.id) ? 'disabled' : ''}>${inCart(t.id) ? 'On my list ✓' : 'Add to my list'}</button>
+            <button class="btn go" data-order="${t.id}">Order now</button>
+          </div>`}
     </div>`;
   const slides = $('#toyBody .slides');
   document.querySelectorAll('#toyBody [data-goto]').forEach((b) => b.onclick = () => {
@@ -372,7 +396,6 @@ function addToCart(id) {
   if (!inCart(id)) {
     state.cart.push({ id, qty: 1 });
     save('as_cart', state.cart);
-    toast(`${t.name} added to your cart`);
     $('#cartBtn').classList.remove('bump');
     void $('#cartBtn').offsetWidth;
     $('#cartBtn').classList.add('bump');
@@ -421,9 +444,10 @@ function renderCart() {
         <p>Your order number is</p>
         <div class="code">${esc(o.order.code)}</div>
         <p>We are holding your toys until <strong>${esc(timeLabel(o.order.hold_until))}</strong>.
-          Send the order on WhatsApp so we can confirm it and arrange payment.</p>
-        <a class="btn wa block" id="waGo" href="${esc(o.link)}" target="_blank" rel="noopener">Send order on WhatsApp</a>
-        <p style="font-size:14px;color:var(--muted)">WhatsApp did not open? Tap the green button. Total to pay: <strong>${kwacha(o.order.total)}</strong>.</p>
+          Send the order on WhatsApp so we can confirm it.</p>
+        <a class="btn wa block big" id="waGo" href="${esc(o.link)}" target="_blank" rel="noopener">Send order on WhatsApp</a>
+        <p class="pay-how">Total to pay: <strong>${kwacha(o.order.total)}</strong>${PAYMENTS[o.order.payment] ? `<br>${esc(PAYMENTS[o.order.payment].how)}` : ''}</p>
+        <img class="mascot" src="assets/img/mascots/spri.webp" alt="" width="80" height="95" loading="lazy" decoding="async">
         <button class="btn ghost block" id="keepShopping">Keep shopping</button>
       </div>`;
     return;
@@ -432,60 +456,48 @@ function renderCart() {
   const lines = cartLines();
   const t = cartTotals(lines);
   if (!lines.length) {
-    body.innerHTML = `<div class="inner"><h2 id="cartTitle">Your cart</h2><p class="empty">Your cart is empty. Tap “Add to cart” on any toy.</p></div>`;
+    body.innerHTML = `<div class="inner"><h2 id="cartTitle">My list</h2><p class="empty">Nothing here yet. Tap <b>+</b> on any toy.</p></div>`;
     return;
   }
 
   const list = `<ul class="cart-list">${lines.map((l) => {
     const gone = !l.toy || l.toy.status !== 'available';
     const name = l.toy?.name || 'This toy';
-    return `<li class="cart-item">
-      <img src="${esc(photoUrl(l.toy))}" alt="">
+    return `<li class="cart-item for-${esc(l.toy?.audience || 'neutral')}">
+      <img src="${esc(thumbUrl(l.toy))}" alt="" width="56" height="56">
       <div><div class="name">${esc(name)}</div>
         ${gone ? '<div class="error-text">No longer available</div>'
           : `<div>${kwacha(effectivePrice(l.toy))}${l.toy.quantity > 1 ? ` · <label>Qty <select data-qty="${l.id}">${Array.from({ length: Math.min(l.toy.quantity, 10) }, (_, i) => `<option ${i + 1 === l.qty ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>` : ''}</div>`}
       </div>
-      <button class="remove" data-remove="${l.id}">Remove</button>
+      <button type="button" class="remove" data-remove="${l.id}" aria-label="Remove ${esc(name)}">×</button>
     </li>`;
   }).join('')}</ul>`;
 
-  if (state.step === 'cart') {
-    body.innerHTML = `
-      <div class="inner">
-        <h2 id="cartTitle">Your cart</h2>
-        ${list}
-        <div class="totals"><div class="grand"><span>Toys total</span><span>${kwacha(t.subtotal)}</span></div></div>
-        <button class="btn block" id="toDetails" ${t.ok.length ? '' : 'disabled'}>Continue to checkout</button>
-      </div>`;
-    return;
-  }
-
   const c = state.customer;
   const s = state.settings;
+  const how = c.location === 'out_of_town' ? 'courier' : c.delivery_method;
   const town = state.towns.find((x) => String(x.id) === String(c.town_id));
-  const sizeText = `${t.size[0].toUpperCase() + t.size.slice(1)} parcel (${t.count} item${t.count === 1 ? '' : 's'})`;
+  const sizeText = `${t.size} parcel`;
+  const pays = Object.entries(PAYMENTS).filter(([k]) => k !== 'cash' || how === 'pickup');
+  if (!pays.some(([k]) => k === c.payment)) c.payment = 'mtn';
   body.innerHTML = `
     <form class="inner" id="checkout" novalidate>
-      <h2 id="cartTitle">Checkout</h2>
-      <p style="color:var(--ink-2);margin-top:6px">${t.count} toy${t.count === 1 ? '' : 's'} · ${kwacha(t.subtotal)} <button type="button" class="btn ghost small" id="backToCart" style="margin-left:8px">Edit cart</button></p>
-      <label class="field"><span>Your name</span><input type="text" name="name" autocomplete="name" required value="${esc(c.name || '')}"></label>
-      <label class="field"><span>WhatsApp number</span><input type="tel" name="phone" autocomplete="tel" inputmode="tel" placeholder="0977 123 456" required value="${esc(c.phone || '')}"></label>
-      <div class="field"><span>Where are you?</span>
-        <div class="seg">
-          <button type="button" class="chip" data-set="location" data-value="lusaka" aria-pressed="${c.location === 'lusaka'}">Lusaka</button>
-          <button type="button" class="chip" data-set="location" data-value="out_of_town" aria-pressed="${c.location === 'out_of_town'}">Out of town</button>
+      <h2 id="cartTitle">My list</h2>
+      ${list}
+      <div class="two-col">
+        <label class="field"><span>Your name</span><input type="text" name="name" autocomplete="name" required value="${esc(c.name || '')}"></label>
+        <label class="field"><span>WhatsApp number</span><input type="tel" name="phone" autocomplete="tel" inputmode="tel" placeholder="0977 123 456" required value="${esc(c.phone || '')}"></label>
+      </div>
+      <div class="field"><span>How do you get it?</span>
+        <div class="seg three">
+          <button type="button" class="opt" data-set="how" data-value="pickup" aria-pressed="${how === 'pickup'}">Pickup<small>Free</small></button>
+          <button type="button" class="opt" data-set="how" data-value="yango" aria-pressed="${how === 'yango'}">Lusaka delivery<small>Yango</small></button>
+          <button type="button" class="opt" data-set="how" data-value="courier" aria-pressed="${how === 'courier'}">Out of town<small>Courier</small></button>
         </div>
       </div>
-      ${c.location === 'lusaka' ? `
-        <div class="field"><span>How do you want it?</span>
-          <div class="seg">
-            <button type="button" class="chip" data-set="delivery_method" data-value="pickup" aria-pressed="${c.delivery_method === 'pickup'}">Pickup</button>
-            <button type="button" class="chip" data-set="delivery_method" data-value="yango" aria-pressed="${c.delivery_method === 'yango'}">Yango delivery</button>
-          </div>
-        </div>
-        <p class="fee-note">${esc(c.delivery_method === 'yango' ? s.yango_note : s.pickup_note)}</p>
-        ${c.delivery_method === 'yango' ? `<label class="field"><span>Delivery address</span><textarea name="address" autocomplete="street-address" placeholder="House number, street, area, landmark" required>${esc(c.address || '')}</textarea></label>` : ''}
-      ` : `
+      ${how === 'pickup' && s.pickup_note ? `<p class="fee-note">${esc(s.pickup_note)}</p>` : ''}
+      ${how === 'yango' ? `${s.yango_note ? `<p class="fee-note">${esc(s.yango_note)}</p>` : ''}<label class="field"><span>Delivery address</span><input type="text" name="address" autocomplete="street-address" placeholder="House number, street, area, landmark" required value="${esc(c.address || '')}"></label>` : ''}
+      ${how === 'courier' ? `
         <label class="field"><span>Your town</span>
           <select name="town_id" required>
             <option value="">Choose your town</option>
@@ -493,21 +505,26 @@ function renderCart() {
           </select>
           <small>Not listed? Message us on WhatsApp.</small>
         </label>
-        ${town ? `<p class="fee-note">Courier${town.courier ? ` (${esc(town.courier)})` : ''} to ${esc(town.name)}: ${sizeText}, ${t.feeKnown ? `<strong>${kwacha(t.fee)}</strong>${packagingFee() ? ` (courier ${kwacha(t.fee - packagingFee())} + packaging and drop-off ${kwacha(packagingFee())})` : ''}` : 'fee confirmed on WhatsApp'}. ${esc(s.courier_note)}</p>` : ''}
-        <label class="field"><span>Address or courier collection point <small>(optional)</small></span><textarea name="address" placeholder="Where the parcel should go">${esc(c.address || '')}</textarea></label>
-      `}
-      <label class="field"><span>Note for us <small>(optional)</small></span><input type="text" name="note" maxlength="200" value="${esc(c.note || '')}"></label>
+        ${town ? `<p class="fee-note">Courier${town.courier ? ` (${esc(town.courier)})` : ''} to ${esc(town.name)}, ${sizeText}: ${t.feeKnown ? `<strong>${kwacha(t.fee)}</strong>${packagingFee() ? ` (courier ${kwacha(t.fee - packagingFee())} + packing and drop-off ${kwacha(packagingFee())})` : ''}` : 'fee confirmed on WhatsApp'}.${s.courier_note ? ' ' + esc(s.courier_note) : ''}</p>` : ''}
+      ` : ''}
+      <div class="field"><span>Pay with</span>
+        <div class="pays">${pays.map(([k, p]) => `<button type="button" class="chip" data-set="payment" data-value="${k}" aria-pressed="${c.payment === k}">${esc(p.label)}</button>`).join('')}</div>
+      </div>
+      <details class="note-box" ${c.note || (how === 'courier' && c.address) ? 'open' : ''}><summary>Add a note${how === 'courier' ? ' or collection point' : ''}</summary>
+        ${how === 'courier' ? `<label class="field"><span>Courier collection point <small>(optional)</small></span><input type="text" name="address" value="${esc(c.address || '')}"></label>` : ''}
+        <label class="field"><span>Note for us <small>(optional)</small></span><input type="text" name="note" maxlength="160" value="${esc(c.note || '')}"></label>
+      </details>
       <div class="totals">
         <div><span>Toys</span><span>${kwacha(t.subtotal)}</span></div>
-        <div><span>Delivery</span><span>${c.location === 'lusaka' ? (c.delivery_method === 'yango' ? 'Paid to driver' : 'Free') : t.feeKnown ? kwacha(t.fee) : 'To confirm'}</span></div>
+        <div><span>Delivery</span><span>${how === 'pickup' ? 'Free' : how === 'yango' ? 'Paid to driver' : t.feeKnown && town ? kwacha(t.fee) : 'To confirm'}</span></div>
         <div class="grand"><span>Total</span><span>${kwacha(t.total)}</span></div>
       </div>
       <p class="error-text" id="checkoutError" role="alert"></p>
-      <button class="btn wa block" type="submit" id="placeOrder" ${state.busy ? 'disabled' : ''}>
-        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm5.4 14.2c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2.1 1-2.4c.3-.3.6-.3.8-.3h.6c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.4 0 .5l-.3.5-.4.5c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1c.2-.3.4-.2.6-.1l2 1c.3.1.5.2.5.3.1.2.1.7-.1 1.3Z"/></svg>
-        ${state.busy ? 'Holding your toys…' : 'Checkout on WhatsApp'}
+      <button class="btn wa block big" type="submit" id="placeOrder" ${state.busy ? 'disabled' : ''}>
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-11.7 7.1L4 20l1-4A8 8 0 1 1 20 12z"/></svg>
+        ${state.busy ? 'Holding your toys…' : 'Send order on WhatsApp'}
       </button>
-      <p style="font-size:13px;color:var(--muted);text-align:center">We hold your toys for ${Math.round((s.hold_minutes || 120) / 60 * 10) / 10} hours while we confirm on WhatsApp.</p>
+      <p style="font-size:13px;color:var(--muted);text-align:center;margin:8px 0 0">We hold your toys for ${Math.round((s.hold_minutes || 120) / 60 * 10) / 10} hours while we confirm on WhatsApp.</p>
     </form>`;
 }
 
@@ -540,7 +557,8 @@ async function placeOrder() {
   state.busy = true;
   renderCart();
   const customer = {
-    name: c.name, phone: c.phone, location: c.location, note: c.note || '',
+    name: c.name, phone: c.phone, location: c.location,
+    note: [c.note, PAYMENTS[c.payment] ? `Pays with ${PAYMENTS[c.payment].label}` : ''].filter(Boolean).join(' · '),
     delivery_method: c.location === 'lusaka' ? c.delivery_method : 'courier',
     town_id: c.location === 'out_of_town' ? c.town_id : null,
     address: c.location === 'lusaka' && c.delivery_method === 'pickup' ? '' : (c.address || ''),
@@ -565,6 +583,8 @@ async function placeOrder() {
     return;
   }
 
+  data.payment = c.payment;
+  data.note = c.note || '';
   const pictures = new URL(`order.html?o=${encodeURIComponent(data.code)}&k=${encodeURIComponent(data.link_key)}`, location.href).href;
   const link = waLink(state.settings.whatsapp_number, orderMessage(data, pictures));
   state.lastOrder = { order: data, link };
@@ -600,6 +620,10 @@ document.addEventListener('click', (e) => {
     }
   } else if (el.dataset.add) {
     addToCart(el.dataset.add);
+  } else if (el.dataset.order) {
+    addToCart(el.dataset.order);
+    $('#toyDialog').close();
+    openCart();
   } else if (el.dataset.open) {
     const t = findToy(el.dataset.open);
     if (t) openToy(t);
@@ -612,18 +636,15 @@ document.addEventListener('click', (e) => {
     save('as_cart', state.cart);
     renderCart();
     render();
-  } else if (el.id === 'toDetails') {
-    state.step = 'details';
-    renderCart();
-  } else if (el.id === 'backToCart') {
-    readForm();
-    state.step = 'cart';
-    renderCart();
+    if (!state.cart.length) $('#cartDialog').close();
   } else if (el.dataset.set) {
     readForm();
-    state.customer[el.dataset.set] = el.dataset.value;
-    if (el.dataset.set === 'location' && el.dataset.value === 'lusaka' && !['pickup', 'yango'].includes(state.customer.delivery_method)) {
-      state.customer.delivery_method = 'pickup';
+    if (el.dataset.set === 'how') {
+      const how = el.dataset.value;
+      state.customer.location = how === 'courier' ? 'out_of_town' : 'lusaka';
+      if (how !== 'courier') state.customer.delivery_method = how;
+    } else {
+      state.customer[el.dataset.set] = el.dataset.value;
     }
     save('as_customer', state.customer);
     renderCart();
@@ -645,7 +666,7 @@ document.addEventListener('change', (e) => {
   } else if (el.name === 'town_id') {
     readForm();
     renderCart();
-  } else if (['category', 'age', 'sort'].includes(el.id)) {
+  } else if (el.id === 'sort') {
     state.filter[el.id] = el.value;
     render({ reset: true });
   }
