@@ -51,7 +51,7 @@ test('staff sign in', async () => {
   await staff.fill('input[name=email]', h.staff.email);
   await staff.fill('input[name=password]', 'wrong');
   await staff.click('#loginForm button[type=submit]');
-  await staff.getByText('That email and password do not match.').waitFor();
+  await staff.getByText('That sign-in name and password do not match.').waitFor();
   await staff.fill('input[name=password]', h.staff.password);
   await staff.click('#loginForm button[type=submit]');
   await staff.getByRole('heading', { name: 'Home' }).waitFor();
@@ -59,7 +59,7 @@ test('staff sign in', async () => {
 
 test('photos become framed toys waiting for review', async () => {
   await staff.goto(`${h.url}/staff/#upload`);
-  await staff.getByRole('button', { name: 'K75', exact: true }).click();
+  await staff.getByRole('button', { name: 'K70', exact: true }).click();
   await staff.setInputFiles('#files', [photo('toy1.jpg'), photo('toy2.jpg'), photo('toy3.jpg')]);
   await staff.getByText('3 of 3 ready').waitFor({ timeout: 30000 });
   await shot(staff, '01-upload');
@@ -129,10 +129,10 @@ test('checkout sends a labelled order to WhatsApp and holds the toys', async () 
   assert.equal(u.pathname, '/260977000111');
   const msg = u.searchParams.get('text');
   assert.match(msg, /\*NEW ORDER ORD-1001\*/);
-  assert.match(msg, /Big Brown Teddy \(AS-\d+\) - Used - K75/);
-  assert.match(msg, /Red Race Car \(AS-\d+\) - Used - K75/);
+  assert.match(msg, /Big Brown Teddy \(AS-\d+\) - Used - K70/);
+  assert.match(msg, /Red Race Car \(AS-\d+\) - Used - K70/);
   assert.match(msg, /\*Delivery:\* Courier to Kitwe via Mazhandu, medium parcel - K130/);
-  assert.match(msg, /\*TOTAL TO PAY:\* K280/);
+  assert.match(msg, /\*TOTAL TO PAY:\* K270/);
   assert.match(msg, /\*Name:\* Mwila Phiri/);
   assert.match(msg, /\*Address:\* Collect at Mazhandu Kitwe/);
   const pictures = msg.match(/Pictures of my toys:\* (\S+)/)[1];
@@ -200,7 +200,7 @@ test('a walk-in sale takes the last toy off the website', async () => {
   await row.locator('input[type=checkbox]').check();
   await staff.getByRole('button', { name: 'Sell in shop' }).click();
   await staff.getByRole('button', { name: 'Record sale' }).click();
-  await staff.getByText(/Sale ORD-\d+ recorded: K75/).waitFor();
+  await staff.getByText(/Sale ORD-\d+ recorded: K70/).waitFor();
   await shopper.goto(`${h.url}/`);
   await shopper.getByText('No toys match').waitFor();
 });
@@ -208,7 +208,7 @@ test('a walk-in sale takes the last toy off the website', async () => {
 test('staff home shows the week and what sells', async () => {
   await staff.goto(`${h.url}/staff/#home`);
   await staff.getByText('Sales this week').waitFor();
-  await staff.getByText('K355').waitFor();
+  await staff.getByText('K340').waitFor();
   await shot(staff, '10-home');
 });
 
@@ -334,6 +334,61 @@ test('angles of one toy and its video become one toy with a gallery', async () =
   assert.equal(await shopper.locator('#toyBody .gallery .thumbs button').count(), 3);
   assert.equal(await shopper.locator('#toyBody .gallery video').count(), 1);
   await shopper.keyboard.press('Escape');
+});
+
+test('the owner adds a Sales person who signs in with a short name and sees only their work', async () => {
+  await staff.goto(`${h.url}/staff/#settings`);
+  await staff.getByRole('heading', { name: 'Team' }).waitFor();
+  const form = staff.locator('#addStaff');
+  await form.locator('input[name=name]').fill('Chanda');
+  await form.locator('input[name=login]').fill('Chanda1');
+  await form.locator('input[name=password]').fill('till-pass');
+  await form.locator('[data-role-new][value=stock]').uncheck();
+  await form.locator('[data-role-new][value=sales]').check();
+  await form.getByRole('button', { name: 'Add person' }).click();
+  await staff.getByText('Chanda can now sign in as chanda1').waitFor();
+  const card = staff.locator('[data-staff="chanda1@staff.allseazons.shop"]');
+  await card.waitFor();
+  await shot(staff, '20-team');
+
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const till = watch(await ctx.newPage());
+  await till.goto(`${h.url}/staff/`);
+  await till.fill('input[name=email]', 'Chanda1');
+  await till.fill('input[name=password]', 'till-pass');
+  await till.click('#loginForm button[type=submit]');
+  await till.getByRole('heading', { name: 'Home' }).waitFor();
+  assert.equal(await till.locator('#nav a[data-nav=orders]').isVisible(), true);
+  for (const page of ['upload', 'review', 'stock']) {
+    assert.equal(await till.locator(`#nav a[data-nav=${page}]`).isVisible(), false, `${page} is hidden for Sales`);
+  }
+  // Going to a Stock page by its address lands on Home instead.
+  await till.goto(`${h.url}/staff/#stock`);
+  await till.getByRole('heading', { name: 'Home' }).waitFor();
+  await till.goto(`${h.url}/staff/#settings`);
+  await till.getByRole('heading', { name: 'My account', level: 1 }).waitFor();
+  assert.equal(await till.getByRole('heading', { name: 'Team' }).count(), 0);
+  await till.fill('#myPassword input[name=pw]', 'new-till-pass');
+  await till.getByRole('button', { name: 'Change my password' }).click();
+  await till.getByText('Password changed').waitFor();
+  await shot(till, '21-sales-account');
+
+  // The owner switches Chanda off: the next sign-in is refused.
+  await staff.reload();
+  await card.locator('[data-active]').uncheck();
+  await staff.getByRole('button', { name: 'Switch off' }).click();
+  await staff.getByText('Chanda is switched off').waitFor();
+  const ctx2 = await browser.newContext();
+  const again = watch(await ctx2.newPage());
+  await again.goto(`${h.url}/staff/`);
+  await again.fill('input[name=email]', 'chanda1');
+  await again.fill('input[name=password]', 'new-till-pass');
+  await again.click('#loginForm button[type=submit]');
+  await again.getByText('That sign-in name and password do not match.').waitFor();
+  // Who did what.
+  await staff.locator('#activity').getByText('Switched off Chanda').waitFor();
+  await ctx.close();
+  await ctx2.close();
 });
 
 test('no browser errors along the way', () => {

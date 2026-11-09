@@ -16,13 +16,50 @@ create table if not exists public.staff (
   name text,
   created_at timestamptz not null default now()
 );
+-- What each person may do. A person can have several roles.
+--   owner = everything (settings, prices, staff, refunds)
+--   stock = photos, review, stock, boxes
+--   sales = orders, shop sales, receipts
+-- Staff who were here before roles existed become owners.
+alter table public.staff add column if not exists roles text[];
+update public.staff set roles = '{owner}' where roles is null;
+alter table public.staff alter column roles set default '{}';
+alter table public.staff alter column roles set not null;
+alter table public.staff drop constraint if exists staff_roles_check;
+alter table public.staff add constraint staff_roles_check
+  check (roles <@ array['owner', 'stock', 'sales']::text[]);
+-- Switched off = cannot sign in or do anything (e.g. a lost phone).
+alter table public.staff add column if not exists active boolean not null default true;
+-- The sign-in name for staff without an email address ("sales1").
+alter table public.staff add column if not exists login text;
+
+create or replace function public._my_email() returns text
+language sql stable as $$
+  select lower(coalesce(auth.jwt()->>'email', ''));
+$$;
 
 create or replace function public.is_staff() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from public.staff
-    where lower(email) = lower(coalesce(auth.jwt()->>'email', ''))
+    where lower(email) = public._my_email() and active
   );
+$$;
+
+-- True when the signed-in person has this role (owners have every role).
+create or replace function public.has_role(p_role text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.staff
+    where lower(email) = public._my_email() and active
+      and ('owner' = any(roles) or p_role = any(roles))
+  );
+$$;
+
+-- The signed-in person's own staff record (name and roles), for the app.
+create or replace function public.my_staff() returns public.staff
+language sql stable security definer set search_path = public as $$
+  select * from public.staff where lower(email) = public._my_email() and active;
 $$;
 
 -- ---------------------------------------------------------------------
@@ -50,7 +87,7 @@ create table if not exists public.price_tiers (
   price int primary key check (price > 0)
 );
 insert into public.price_tiers (price)
-values (50), (75), (100), (150), (200), (250), (300)
+values (30), (50), (70), (100), (120), (150), (180), (200), (250), (300), (350), (400)
 on conflict do nothing;
 
 create table if not exists public.categories (
@@ -218,6 +255,80 @@ create trigger toys_touch before update on public.toys
 drop trigger if exists orders_touch on public.orders;
 create trigger orders_touch before update on public.orders
   for each row execute function public.touch_updated_at();
+
+-- ---------------------------------------------------------------------
+-- Activity: who did what, written automatically. Only staff actions are
+-- recorded (customers placing orders are not).
+-- ---------------------------------------------------------------------
+create table if not exists public.activity (
+  id bigserial primary key,
+  at timestamptz not null default now(),
+  actor text not null,
+  actor_name text,
+  action text not null,
+  toy_id uuid,
+  order_id uuid,
+  summary text not null
+);
+create index if not exists activity_at_idx on public.activity (at desc);
+create index if not exists activity_actor_idx on public.activity (actor, at desc);
+
+create or replace function public._log(p_action text, p_summary text, p_toy uuid default null, p_order uuid default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_email text := public._my_email();
+begin
+  if v_email = '' then return; end if;
+  insert into public.activity (actor, actor_name, action, toy_id, order_id, summary)
+  values (v_email, (select name from public.staff where lower(email) = v_email), p_action, p_toy, p_order, p_summary);
+end;
+$$;
+
+create or replace function public._log_toy() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' then
+    perform public._log('toy_added', 'Added a toy (' || new.code || ')', new.id);
+  elsif tg_op = 'DELETE' then
+    perform public._log('toy_deleted', 'Deleted ' || old.name || ' (' || old.code || ')', null);
+    return old;
+  else
+    if new.status is distinct from old.status and not (old.status in ('available', 'reserved') and new.status in ('available', 'reserved')) then
+      perform public._log(case when old.status = 'review' and new.status = 'available' then 'toy_approved' else 'toy_status' end,
+        case when old.status = 'review' and new.status = 'available' then 'Approved ' || new.name || ' (' || new.code || ') for the shop'
+             else new.name || ' (' || new.code || '): ' || old.status || ' to ' || new.status end, new.id);
+    end if;
+    if new.price is distinct from old.price or new.sale_price is distinct from old.sale_price then
+      perform public._log('toy_price', new.name || ' (' || new.code || ') price K' || old.price || ' to K' || new.price
+        || case when new.sale_price is not null then ', sale K' || new.sale_price else '' end, new.id);
+    end if;
+    if new.name is distinct from old.name and old.name <> 'New toy' then
+      perform public._log('toy_renamed', old.name || ' renamed to ' || new.name || ' (' || new.code || ')', new.id);
+    end if;
+    if new.quantity is distinct from old.quantity and new.status = old.status then
+      perform public._log('toy_quantity', new.name || ' (' || new.code || ') quantity ' || old.quantity || ' to ' || new.quantity, new.id);
+    end if;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists toys_log on public.toys;
+create trigger toys_log after insert or update or delete on public.toys
+  for each row execute function public._log_toy();
+
+create or replace function public._log_order() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' and new.channel = 'shop' then
+    perform public._log('shop_sale', 'Shop sale ' || new.code, null, new.id);
+  elsif tg_op = 'UPDATE' and new.status is distinct from old.status and not (new.channel = 'shop' and old.status = 'held') then
+    perform public._log('order_' || new.status, 'Order ' || new.code || ' (' || new.customer_name || '): ' || old.status || ' to ' || new.status, null, new.id);
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists orders_log on public.orders;
+create trigger orders_log after insert or update on public.orders
+  for each row execute function public._log_order();
 
 -- =====================================================================
 -- Stock logic. Internal helpers start with an underscore and cannot be
@@ -502,11 +613,25 @@ begin
 end;
 $$;
 
+create or replace function public._require_role(p_role text) returns void
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform public._require_staff();
+  if not public.has_role(p_role) then
+    raise exception '%', case p_role
+      when 'owner' then 'Only the owner can do this.'
+      when 'stock' then 'Only Stock staff can do this.'
+      when 'sales' then 'Only Sales staff can do this.'
+      else 'Staff only.' end using errcode = '42501';
+  end if;
+end;
+$$;
+
 create or replace function public.approve_toys(p_ids uuid[]) returns int
 language plpgsql security definer set search_path = public as $$
 declare n int;
 begin
-  perform public._require_staff();
+  perform public._require_role('stock');
   update public.toys
   set status = 'available', approved_at = now(), needs_attention = false
   where id = any(p_ids) and status = 'review' and image_path is not null and quantity > 0;
@@ -523,7 +648,7 @@ declare
   v_sold boolean;
   v_was_sold boolean;
 begin
-  perform public._require_staff();
+  perform public._require_role('sales');
   select * into o from public.orders where id = p_order for update;
   if not found then
     raise exception 'Order not found.' using errcode = 'P0001';
@@ -567,6 +692,8 @@ begin
       where id = o.id returning * into o;
     when 'cancelled' then
       if v_was_sold then
+        -- Cancelling a paid order is a refund.
+        perform public._require_role('owner');
         perform public._mark_sold(o.id, -1);
       end if;
       if v_holding or v_was_sold then
@@ -588,7 +715,7 @@ language plpgsql security definer set search_path = public as $$
 declare
   o public.orders;
 begin
-  perform public._require_staff();
+  perform public._require_role('sales');
   if jsonb_typeof(p_items) is distinct from 'array' or jsonb_array_length(p_items) = 0 then
     raise exception 'Pick at least one toy.' using errcode = 'P0001';
   end if;
@@ -624,6 +751,150 @@ end;
 $$;
 
 -- =====================================================================
+-- Staff accounts (owner only). Staff without an email sign in with a
+-- short name; it becomes <name>@staff.allseazons.shop behind the scenes.
+-- =====================================================================
+create or replace function public._login_email(p_login text) returns text
+language sql immutable as $$
+  select case when position('@' in btrim(p_login)) > 0 then lower(btrim(p_login))
+              else lower(regexp_replace(btrim(p_login), '[^A-Za-z0-9._-]', '', 'g')) || '@staff.allseazons.shop' end;
+$$;
+
+create or replace function public._check_roles(p_roles text[]) returns text[]
+language plpgsql immutable as $$
+begin
+  if p_roles is null or cardinality(p_roles) = 0 then
+    raise exception 'Pick at least one job for this person.' using errcode = 'P0001';
+  end if;
+  if not (p_roles <@ array['owner', 'stock', 'sales']::text[]) then
+    raise exception 'Unknown job.' using errcode = 'P0001';
+  end if;
+  return array(select distinct unnest(p_roles) order by 1);
+end;
+$$;
+
+-- There must always be one owner who can sign in.
+create or replace function public._keep_an_owner() returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not exists (select 1 from public.staff where active and 'owner' = any(roles)) then
+    raise exception 'There must always be at least one owner.' using errcode = 'P0001';
+  end if;
+end;
+$$;
+
+create or replace function public.staff_add(p_name text, p_login text, p_password text, p_roles text[])
+returns public.staff
+language plpgsql security definer set search_path = public, extensions, auth as $$
+declare
+  v_email text := public._login_email(coalesce(p_login, ''));
+  v_roles text[] := public._check_roles(p_roles);
+  v_uid uuid;
+  r public.staff;
+begin
+  perform public._require_role('owner');
+  if nullif(btrim(coalesce(p_name, '')), '') is null then
+    raise exception 'Type the person''s name.' using errcode = 'P0001';
+  end if;
+  if v_email !~ '^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]+$' or v_email like '@%' then
+    raise exception 'Type a sign-in name (letters and numbers) or an email address.' using errcode = 'P0001';
+  end if;
+  if exists (select 1 from public.staff where lower(email) = v_email) then
+    raise exception 'Someone already signs in as %.', p_login using errcode = 'P0001';
+  end if;
+
+  select id into v_uid from auth.users where lower(email) = v_email;
+  if v_uid is null then
+    if length(coalesce(p_password, '')) < 6 then
+      raise exception 'The password needs at least 6 characters.' using errcode = 'P0001';
+    end if;
+    v_uid := gen_random_uuid();
+    insert into auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+                            raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+                            confirmation_token, email_change, email_change_token_new, recovery_token)
+    values ('00000000-0000-0000-0000-000000000000', v_uid, 'authenticated', 'authenticated', v_email,
+            crypt(p_password, gen_salt('bf')), now(),
+            '{"provider":"email","providers":["email"]}', jsonb_build_object('name', btrim(p_name)), now(), now(),
+            '', '', '', '');
+    insert into auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+    values (gen_random_uuid(), v_uid, v_uid::text,
+            jsonb_build_object('sub', v_uid::text, 'email', v_email, 'email_verified', true),
+            'email', now(), now(), now());
+  elsif length(coalesce(p_password, '')) > 0 then
+    if length(p_password) < 6 then
+      raise exception 'The password needs at least 6 characters.' using errcode = 'P0001';
+    end if;
+    update auth.users set encrypted_password = crypt(p_password, gen_salt('bf')), banned_until = null, updated_at = now()
+    where id = v_uid;
+  end if;
+
+  insert into public.staff (email, name, roles, login, active)
+  values (v_email, btrim(p_name), v_roles, case when position('@' in p_login) > 0 then null else split_part(v_email, '@', 1) end, true)
+  returning * into r;
+  perform public._log('staff_added', 'Added ' || r.name || ' (' || array_to_string(r.roles, ', ') || ')');
+  return r;
+end;
+$$;
+
+create or replace function public.staff_update(p_email text, p_name text default null, p_roles text[] default null,
+                                               p_active boolean default null)
+returns public.staff
+language plpgsql security definer set search_path = public, auth as $$
+declare r public.staff; old public.staff;
+begin
+  perform public._require_role('owner');
+  select * into old from public.staff where lower(email) = lower(p_email) for update;
+  if not found then raise exception 'That person is not on the staff list.' using errcode = 'P0001'; end if;
+  update public.staff set
+    name = coalesce(nullif(btrim(p_name), ''), name),
+    roles = case when p_roles is null then roles else public._check_roles(p_roles) end,
+    active = coalesce(p_active, active)
+  where email = old.email returning * into r;
+  perform public._keep_an_owner();
+  -- Switching someone off also ends their sign-in on every phone.
+  if r.active is distinct from old.active then
+    update auth.users set banned_until = case when r.active then null else 'infinity'::timestamptz end
+    where lower(email) = lower(r.email);
+    perform public._log('staff_' || case when r.active then 'on' else 'off' end,
+      case when r.active then 'Switched on ' else 'Switched off ' end || r.name);
+  end if;
+  if r.roles is distinct from old.roles then
+    perform public._log('staff_roles', coalesce(r.name, r.email) || ' jobs: ' || array_to_string(r.roles, ', '));
+  end if;
+  return r;
+end;
+$$;
+
+create or replace function public.staff_set_password(p_email text, p_password text) returns void
+language plpgsql security definer set search_path = public, extensions, auth as $$
+begin
+  perform public._require_role('owner');
+  if not exists (select 1 from public.staff where lower(email) = lower(p_email)) then
+    raise exception 'That person is not on the staff list.' using errcode = 'P0001';
+  end if;
+  if length(coalesce(p_password, '')) < 6 then
+    raise exception 'The password needs at least 6 characters.' using errcode = 'P0001';
+  end if;
+  update auth.users set encrypted_password = crypt(p_password, gen_salt('bf')), updated_at = now()
+  where lower(email) = lower(p_email);
+  perform public._log('staff_password', 'New password for ' || coalesce((select name from public.staff where lower(email) = lower(p_email)), p_email));
+end;
+$$;
+
+create or replace function public.staff_remove(p_email text) returns void
+language plpgsql security definer set search_path = public, auth as $$
+declare r public.staff;
+begin
+  perform public._require_role('owner');
+  delete from public.staff where lower(email) = lower(p_email) returning * into r;
+  if not found then return; end if;
+  perform public._keep_an_owner();
+  update auth.users set banned_until = 'infinity'::timestamptz where lower(email) = lower(p_email);
+  perform public._log('staff_removed', 'Removed ' || coalesce(r.name, r.email) || ' from staff');
+end;
+$$;
+
+-- =====================================================================
 -- Security rules (row level security).
 -- The public can read the shop: toys on sale, on hold or sold, plus
 -- settings, towns, price tiers and categories. Everything else is staff
@@ -639,52 +910,67 @@ alter table public.toys enable row level security;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
 
+alter table public.activity enable row level security;
+
+-- Everyone on staff sees who is on the team; changes go through the
+-- staff_* functions (owner only).
 drop policy if exists "staff manage staff" on public.staff;
-create policy "staff manage staff" on public.staff for all to authenticated
-  using (public.is_staff()) with check (public.is_staff());
+drop policy if exists "staff see staff" on public.staff;
+create policy "staff see staff" on public.staff for select to authenticated using (public.is_staff());
+
+drop policy if exists "owner reads activity" on public.activity;
+create policy "owner reads activity" on public.activity for select to authenticated using (public.has_role('owner'));
 
 drop policy if exists "anyone reads settings" on public.settings;
 create policy "anyone reads settings" on public.settings for select to anon, authenticated using (true);
 drop policy if exists "staff edit settings" on public.settings;
 create policy "staff edit settings" on public.settings for update to authenticated
-  using (public.is_staff()) with check (public.is_staff());
+  using (public.has_role('owner')) with check (public.has_role('owner'));
 
 drop policy if exists "anyone reads price tiers" on public.price_tiers;
 create policy "anyone reads price tiers" on public.price_tiers for select to anon, authenticated using (true);
 drop policy if exists "staff edit price tiers" on public.price_tiers;
 create policy "staff edit price tiers" on public.price_tiers for all to authenticated
-  using (public.is_staff()) with check (public.is_staff());
+  using (public.has_role('owner')) with check (public.has_role('owner'));
 
 drop policy if exists "anyone reads categories" on public.categories;
 create policy "anyone reads categories" on public.categories for select to anon, authenticated using (true);
 drop policy if exists "staff edit categories" on public.categories;
 create policy "staff edit categories" on public.categories for all to authenticated
-  using (public.is_staff()) with check (public.is_staff());
+  using (public.has_role('owner')) with check (public.has_role('owner'));
 
 drop policy if exists "anyone reads towns" on public.towns;
 create policy "anyone reads towns" on public.towns for select to anon, authenticated using (true);
 drop policy if exists "staff edit towns" on public.towns;
 create policy "staff edit towns" on public.towns for all to authenticated
-  using (public.is_staff()) with check (public.is_staff());
+  using (public.has_role('owner')) with check (public.has_role('owner'));
 
 drop policy if exists "staff manage boxes" on public.boxes;
 create policy "staff manage boxes" on public.boxes for all to authenticated
-  using (public.is_staff()) with check (public.is_staff());
+  using (public.has_role('stock')) with check (public.has_role('stock'));
+drop policy if exists "staff see boxes" on public.boxes;
+create policy "staff see boxes" on public.boxes for select to authenticated using (public.is_staff());
 
 drop policy if exists "anyone reads shop toys" on public.toys;
 create policy "anyone reads shop toys" on public.toys for select to anon, authenticated
   using (status in ('available', 'reserved', 'sold'));
 drop policy if exists "staff manage toys" on public.toys;
 create policy "staff manage toys" on public.toys for all to authenticated
-  using (public.is_staff()) with check (public.is_staff());
+  using (public.has_role('stock')) with check (public.has_role('stock'));
+drop policy if exists "staff see toys" on public.toys;
+create policy "staff see toys" on public.toys for select to authenticated using (public.is_staff());
 
 drop policy if exists "staff manage orders" on public.orders;
 create policy "staff manage orders" on public.orders for all to authenticated
-  using (public.is_staff()) with check (public.is_staff());
+  using (public.has_role('sales')) with check (public.has_role('sales'));
+drop policy if exists "staff see orders" on public.orders;
+create policy "staff see orders" on public.orders for select to authenticated using (public.is_staff());
 
 drop policy if exists "staff manage order items" on public.order_items;
 create policy "staff manage order items" on public.order_items for all to authenticated
-  using (public.is_staff()) with check (public.is_staff());
+  using (public.has_role('sales')) with check (public.has_role('sales'));
+drop policy if exists "staff see order items" on public.order_items;
+create policy "staff see order items" on public.order_items for select to authenticated using (public.is_staff());
 
 -- The website (anon) may only read; writes go through the functions above.
 revoke insert, update, delete, truncate on all tables in schema public from anon;
@@ -694,6 +980,19 @@ revoke execute on function public._reserve_order(uuid) from public, anon, authen
 revoke execute on function public._restock_order(uuid) from public, anon, authenticated;
 revoke execute on function public._mark_sold(uuid, int) from public, anon, authenticated;
 revoke execute on function public._require_staff() from public, anon;
+revoke execute on function public._require_role(text) from public, anon;
+revoke execute on function public._log(text, text, uuid, uuid) from public, anon, authenticated;
+revoke execute on function public._keep_an_owner() from public, anon, authenticated;
+revoke execute on function public.staff_add(text, text, text, text[]) from public, anon;
+revoke execute on function public.staff_update(text, text, text[], boolean) from public, anon;
+revoke execute on function public.staff_set_password(text, text) from public, anon;
+revoke execute on function public.staff_remove(text) from public, anon;
+grant execute on function public.staff_add(text, text, text, text[]) to authenticated;
+grant execute on function public.staff_update(text, text, text[], boolean) to authenticated;
+grant execute on function public.staff_set_password(text, text) to authenticated;
+grant execute on function public.staff_remove(text) to authenticated;
+grant execute on function public.has_role(text) to authenticated;
+grant execute on function public.my_staff() to authenticated;
 revoke execute on function public.approve_toys(uuid[]) from public, anon;
 revoke execute on function public.set_order_status(uuid, text) from public, anon;
 revoke execute on function public.shop_sale(jsonb, text, text) from public, anon;
@@ -713,10 +1012,14 @@ on conflict (id) do update set public = true;
 insert into storage.buckets (id, name, public) values ('raw', 'raw', false)
 on conflict (id) do nothing;
 
+-- Stock staff add and change photos; everyone on staff can look at them.
 drop policy if exists "staff manage toy photos" on storage.objects;
 create policy "staff manage toy photos" on storage.objects for all to authenticated
-  using (bucket_id in ('toys', 'raw') and public.is_staff())
-  with check (bucket_id in ('toys', 'raw') and public.is_staff());
+  using (bucket_id in ('toys', 'raw') and public.has_role('stock'))
+  with check (bucket_id in ('toys', 'raw') and public.has_role('stock'));
+drop policy if exists "staff see toy photos" on storage.objects;
+create policy "staff see toy photos" on storage.objects for select to authenticated
+  using (bucket_id in ('toys', 'raw') and public.is_staff());
 
 -- =====================================================================
 -- Live updates: the shop refreshes itself when stock changes.
