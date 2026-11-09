@@ -27,6 +27,10 @@ const NEXT = {
 
 let root = null;
 let tab = 'open';
+// The Inbox shows work still to do; Order history shows finished orders.
+let view = 'inbox';
+const GROUPS = { inbox: ['open', 'paid', 'packed', 'sent'], history: ['delivered', 'closed', 'shop'] };
+const SECTION_LABEL = { shop: 'Shop sales' };
 let q = '';
 let orders = [];
 let counts = {};
@@ -43,6 +47,7 @@ export function leave() { root = null; clearInterval(ticker); }
 
 async function load() {
   await supabase.rpc('release_expired_holds');
+  if (!tab) { orders = []; render(); return; }
   const t = TABS.find((x) => x.key === tab);
   let query = supabase.from('orders').select('*, order_items(*)').order('created_at', { ascending: tab === 'open' || tab === 'paid' });
   query = tab === 'shop' ? query.eq('channel', 'shop') : query.in('status', t.statuses).eq('channel', 'online');
@@ -53,10 +58,12 @@ async function load() {
   const [{ data, error }, ...countRes] = await Promise.all([
     query.limit(200),
     ...TABS.map((x) => supabase.from('orders').select('id', { count: 'exact', head: true }).in('status', x.statuses).eq('channel', 'online')),
+    supabase.from('orders').select('id', { count: 'exact', head: true }).eq('channel', 'shop'),
   ]);
   if (error) throw error;
   orders = data;
   counts = Object.fromEntries(TABS.map((x, i) => [x.key, countRes[i].count || 0]));
+  counts.shop = countRes[TABS.length].count || 0;
   render();
 }
 
@@ -128,18 +135,33 @@ function render() {
       ${can('sales') ? '<a class="btn small ghost" href="#sale">Shop sale</a><a class="btn small ghost" href="#sale?wa">WhatsApp order</a>' : ''}
       ${picked.size ? `<a class="btn" href="sticker.html?ids=${stickerIds}" target="_blank" rel="noopener">Print ${picked.size} sticker${picked.size > 1 ? 's' : ''}</a>` : ''}
     </div>
-    <div class="otabs">
-      ${TABS.map((t) => `<button class="chip" data-tab="${t.key}" aria-pressed="${tab === t.key}">${t.label} <b>${counts[t.key] || 0}</b></button>`).join('')}
-      <button class="chip" data-tab="shop" aria-pressed="${tab === 'shop'}">Shop sales</button>
+    <div class="view-switch" role="tablist">
+      <button role="tab" data-view="inbox" aria-selected="${view === 'inbox'}">To do</button>
+      <button role="tab" data-view="history" aria-selected="${view === 'history'}">Order history</button>
     </div>
     <div class="toolbar"><input type="search" id="oq" placeholder="Search order, name, phone or town" value="${esc(q)}"></div>
-    <div class="orders">${orders.map(orderCard).join('') || '<div class="card-box">No orders here.</div>'}</div>`;
+    <div class="stack">${GROUPS[view].map((key) => {
+      const label = SECTION_LABEL[key] || TABS.find((x) => x.key === key).label;
+      const open = tab === key;
+      return `<section class="stack-sec ${open ? 'open' : ''}">
+        <button class="stack-head" data-tab="${key}" aria-expanded="${open}">
+          <span>${label}</span><b class="n">${counts[key] || 0}</b><span class="chev" aria-hidden="true">${open ? '▴' : '▾'}</span>
+        </button>
+        ${open ? `<div class="orders">${orders.map(orderCard).join('') || '<p class="none">Nothing here right now.</p>'}</div>` : ''}
+      </section>`;
+    }).join('')}</div>`;
   $$('.hold[data-until]', root).forEach(paintHold);
   wire();
 }
 
 function wire() {
-  $$('[data-tab]', root).forEach((b) => b.onclick = () => { tab = b.dataset.tab; load(); });
+  $$('[data-tab]', root).forEach((b) => b.onclick = () => { tab = tab === b.dataset.tab ? null : b.dataset.tab; load(); });
+  $$('[data-view]', root).forEach((b) => b.onclick = () => {
+    if (view === b.dataset.view) return;
+    view = b.dataset.view;
+    tab = GROUPS[view][0];
+    load();
+  });
   let t;
   $('#oq', root).oninput = (e) => { clearTimeout(t); t = setTimeout(async () => { q = e.target.value.trim(); await load(); const i = $('#oq', root); i?.focus(); i?.setSelectionRange(i.value.length, i.value.length); }, 350); };
   $$('[data-pick]', root).forEach((c) => c.onchange = () => {

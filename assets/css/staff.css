@@ -307,3 +307,22 @@ dialog.panel .close { position: sticky; top: 10px; float: right; margin: 10px 10
   .app:has(.page-snap) .side { display: none; }
   .back { display: grid; }
 }
+
+/* Inbox: big stacked sections, one open at a time. */
+.view-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin-bottom: 12px; background: #fff; border: 2.5px solid var(--ink); border-radius: 18px; }
+.view-switch button { border: 0; background: none; min-height: 44px; border-radius: 13px; font: 600 16px var(--display); color: var(--ink-2); cursor: pointer; }
+.view-switch button[aria-selected="true"] { background: var(--ink); color: #fff; }
+.stack { display: grid; gap: 12px; }
+.stack-head { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 0 18px; cursor: pointer;
+  border: 2.5px solid var(--ink); border-radius: 20px; background: #fff; box-shadow: var(--pop-sm); color: var(--ink); text-align: left; font: 700 20px var(--display); }
+.stack-head > span:first-child { flex: 1; }
+.stack-head .n { min-width: 36px; height: 36px; padding: 0 8px; border-radius: 18px; border: 2.5px solid var(--ink); background: var(--yellow); display: grid; place-items: center; font: 700 17px var(--display); }
+.stack-head .chev { font-size: 18px; }
+.stack-sec:nth-child(4n+1) .stack-head .n { background: var(--yellow); }
+.stack-sec:nth-child(4n+2) .stack-head .n { background: var(--green); }
+.stack-sec:nth-child(4n+3) .stack-head .n { background: var(--blue); }
+.stack-sec:nth-child(4n) .stack-head .n { background: var(--pink); }
+.stack-sec.open .stack-head { background: var(--ink); color: #fff; }
+.stack-sec.open .stack-head .n { color: var(--ink); }
+.stack-sec .orders { margin-top: 12px; }
+.stack .none { color: var(--muted); font-weight: 700; padding: 6px 4px; margin: 0; }

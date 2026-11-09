@@ -335,6 +335,15 @@ async function importCsv(file) {
 // Facebook, Instagram, WhatsApp status and so on; the website shows the
 // plain photos. One zip: 001-name.jpg... plus captions.txt to copy from.
 const PACK_MAX = 60;
+function saveBlob(name, blob) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
 async function socialPack(list, button) {
   const ready = list.filter((t) => t.image_path);
   if (!ready.length) return toast('None of these toys has a picture yet.', true);
@@ -355,13 +364,21 @@ async function socialPack(list, button) {
         `${kwacha(effectivePrice(t))} · ${CONDITIONS[t.condition]}${t.age_range ? ` · ${t.age_range} yrs` : ''}`,
         t.description || '', `Order: ${link}`].filter(Boolean).join('\n'));
     }
-    files.push({ name: 'captions.txt', data: captions.join('\n\n') + '\n' });
-    const url = URL.createObjectURL(makeZip(files));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `social-media-pack-${new Date().toISOString().slice(0, 10)}.zip`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    const text = captions.join('\n\n') + '\n';
+    // On a phone a zip is hard to open: save each picture on its own, so it
+    // lands in the gallery ready to post, and put the captions on the clipboard.
+    if (window.matchMedia('(pointer: coarse)').matches) {
+      for (const f of files) {
+        saveBlob(f.name, new Blob([f.data], { type: 'image/jpeg' }));
+        await new Promise((r) => setTimeout(r, 350));
+      }
+      saveBlob('captions.txt', new Blob([text], { type: 'text/plain' }));
+      try { await navigator.clipboard.writeText(text); } catch { /* not allowed: captions.txt is saved too */ }
+      toast(`${picks.length} pictures saved. Captions copied.`);
+      return;
+    }
+    files.push({ name: 'captions.txt', data: text });
+    saveBlob(`social-media-pack-${new Date().toISOString().slice(0, 10)}.zip`, makeZip(files));
     toast(`${picks.length} pictures ready to post`);
   } catch (e) {
     toast(friendlyError(e), true);
