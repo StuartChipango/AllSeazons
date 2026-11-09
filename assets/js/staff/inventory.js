@@ -74,7 +74,7 @@ function render() {
     <div class="list">${list.slice(0, 400).map((t) => `
       <div class="item-row" data-id="${t.id}">
         <input type="checkbox" data-pick="${t.id}" ${selected.has(t.id) ? 'checked' : ''} aria-label="Select ${esc(t.name)}">
-        <img src="${esc(imageUrl(t.image_path))}" alt="" loading="lazy">
+        <img src="${esc(imageUrl(t.thumb_path || t.image_path))}" alt="" loading="lazy" decoding="async">
         <div><div class="nm">${esc(t.name)}</div>
           <div class="mt">${esc(t.code)} · ${esc(AUDIENCES[t.audience]?.label)} · ${esc(CONDITIONS[t.condition])}${t.box_id ? ' · ' + esc(t.box_id) : ''}${t.quantity > 1 ? ` · ${t.quantity} left` : ''}</div></div>
         <div style="text-align:right"><div><strong>${kwacha(effectivePrice(t))}</strong>${effectivePrice(t) < t.price ? ` <s style="color:var(--muted)">${kwacha(t.price)}</s>` : ''}</div>

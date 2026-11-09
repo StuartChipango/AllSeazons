@@ -91,10 +91,17 @@ test('approve all puts the toys in the shop', async () => {
   await shopper.goto(`${h.url}/`);
   await shopper.locator('.card').first().waitFor();
   assert.equal(await shopper.locator('.card').count(), 3);
-  await shopper.waitForFunction(() => [...document.querySelectorAll('.card .pic img')].every((i) => i.complete && i.naturalWidth === 1080));
-  // The website shows the plain photos; the framed pictures are for social media.
+  // Cards show a small copy of the plain photo (quick on phones); the framed
+  // pictures are for social media.
+  await shopper.waitForFunction(() => [...document.querySelectorAll('.card .pic img')].every((i) => i.complete && i.naturalWidth === 480));
   const srcs = await shopper.locator('.card .pic img').evaluateAll((els) => els.map((i) => i.src));
-  assert.ok(srcs.every((src) => /\/photo-\d+\.jpg$/.test(src)), srcs.join(' '));
+  assert.ok(srcs.every((src) => /\/thumb-\d+\.jpg$/.test(src)), srcs.join(' '));
+  // Opening a toy shows the full-size plain photo.
+  await shopper.locator('.card .pic').first().click();
+  const full = shopper.locator('#toyDialog .gallery img').first();
+  await full.waitFor();
+  assert.match(await full.getAttribute('src'), /\/photo-\d+\.jpg$/);
+  await shopper.keyboard.press('Escape');
   assert.equal(await shopper.locator('.card .cond').first().textContent(), 'Used');
   await shot(shopper, '03-shop');
   await shopper.getByRole('button', { name: 'Boys' }).click();
@@ -389,6 +396,36 @@ test('the owner adds a Sales person who signs in with a short name and sees only
   await staff.locator('#activity').getByText('Switched off Chanda').waitFor();
   await ctx.close();
   await ctx2.close();
+});
+
+test('the shop draws toys a screenful at a time and old toys get small pictures', async () => {
+  const pg = new (require('pg').Client)({ connectionString: h.dbUrl });
+  await pg.connect();
+  // An older toy with only a full photo: the staff app makes its small copy.
+  const src = (await pg.query("select photo_path from toys where photo_path is not null limit 1")).rows[0].photo_path;
+  await pg.query(`insert into toys (name, price, status, image_path, photo_path, approved_at)
+    select 'Old Toy ' || g, 50, 'available', $1, $1, now() - interval '1 day' from generate_series(1, 40) g`, [src]);
+  await shopper.goto(`${h.url}/`);
+  await shopper.locator('.card').first().waitFor();
+  const total = (await pg.query("select count(*)::int n from toys where status in ('available','reserved')")).rows[0].n;
+  assert.ok(total > 40);
+  assert.equal(await shopper.locator('.card').count(), 24, 'first screenful only');
+  for (let i = 0; i < 6 && (await shopper.locator('.card').count()) < total; i++) {
+    await shopper.locator('#more').scrollIntoViewIfNeeded();
+    await shopper.waitForTimeout(300);
+  }
+  assert.equal(await shopper.locator('.card').count(), total, 'scrolling shows the rest');
+
+  await staff.goto(`${h.url}/staff/#home`);
+  await staff.waitForFunction(() => true);
+  for (let i = 0; i < 60; i++) {
+    const left = (await pg.query("select count(*)::int n from toys where thumb_path is null and photo_path is not null")).rows[0].n;
+    if (!left) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  const left = (await pg.query("select count(*)::int n from toys where thumb_path is null and photo_path is not null")).rows[0].n;
+  await pg.end();
+  assert.equal(left, 0, 'every toy got a small picture');
 });
 
 test('no browser errors along the way', () => {
