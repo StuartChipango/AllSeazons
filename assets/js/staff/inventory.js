@@ -58,6 +58,11 @@ function render() {
       <button class="btn ghost small" id="exportCsv">Export CSV</button>
       <label class="btn ghost small">Import CSV<input type="file" accept=".csv,text/csv" id="importCsv" hidden></label>
     </div>
+    <nav class="stories" aria-label="Stock jobs">
+      <a class="story" href="#upload"><div class="ring"><div class="in">📷</div></div>Snap</a>
+      <a class="story ${toys.some((t) => t.status === 'review') ? '' : 'quiet'}" href="#review"><div class="ring"><div class="in">${toys.filter((t) => t.status === 'review').length}</div></div>Review</a>
+      <a class="story quiet" href="#boxes"><div class="ring"><div class="in">📦</div></div>Boxes</a>
+    </nav>
     <div class="toolbar">
       <input type="search" id="q" placeholder="Search name, code, brand" value="${esc(filter.q)}">
       <select id="fStatus">
@@ -93,7 +98,7 @@ function render() {
         <button class="btn small" data-bulk="social">Social media pack</button>
         <button class="btn small" data-bulk="clear">Clear</button>
       </div>` : ''}
-    <div class="mobile-more"><a class="btn ghost" href="#boxes">Boxes</a><a class="btn ghost" href="#settings">Settings</a><a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
+    <div class="mobile-more"><a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
   wire();
 }
 
@@ -142,7 +147,7 @@ async function bulk(action, button) {
   await load();
 }
 
-function sellPanel(picked) {
+export function sellPanel(picked, done = load) {
   const ok = picked.filter((t) => t.status === 'available');
   const body = openPanel(`
     <h2>Sell in the shop</h2>
@@ -172,7 +177,7 @@ function sellPanel(picked) {
     toast(`Sale ${data.code} recorded: ${kwacha(data.total)}`);
     closePanel();
     selected.clear();
-    load();
+    done();
   };
 }
 

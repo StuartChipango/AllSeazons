@@ -1,5 +1,5 @@
 import { supabase, configured, friendlyError } from '../db.js';
-import { $, $$, toast } from './ui.js';
+import { $, $$, toast, closePanel } from './ui.js';
 
 // Shared lookups every page uses, loaded once after sign-in.
 export const ROLE_LABELS = { owner: 'Owner', stock: 'Stock', sales: 'Sales' };
@@ -16,6 +16,8 @@ export const shared = {
   tiers: [],
   categories: [],
   boxes: [],
+  // Photos picked from the + menu, handed to the Snap page when it opens.
+  pendingFiles: null,
   async refresh() {
     const [s, t, c, b] = await Promise.all([
       supabase.from('settings').select('*').eq('id', 1).maybeSingle(),
@@ -38,10 +40,11 @@ const pages = {
   stock: () => import('./inventory.js'),
   boxes: () => import('./boxes.js'),
   settings: () => import('./settings.js'),
+  sale: () => import('./sale.js'),
 };
 
 // Which job each page needs (null = everyone).
-const NEEDS = { home: null, upload: 'stock', review: 'stock', stock: 'stock', boxes: 'stock', orders: 'sales', settings: null };
+const NEEDS = { home: null, upload: 'stock', review: 'stock', stock: 'stock', boxes: 'stock', orders: 'sales', sale: 'sales', settings: null };
 const allowed = (name) => !NEEDS[name] || can(NEEDS[name]);
 
 let current = null;
@@ -50,12 +53,15 @@ async function route() {
   let name = (location.hash.slice(1).split('?')[0]) || 'home';
   if (!pages[name] || !allowed(name)) name = 'home';
   const loader = pages[name];
+  // Snap, Review and Boxes sit under Stock on the phone's bottom tabs.
+  const parent = { upload: 'stock', review: 'stock', boxes: 'stock', sale: 'orders' }[name];
   $$('#nav a').forEach((a) => {
-    if (a.dataset.nav === name) a.setAttribute('aria-current', 'page');
+    if (a.dataset.nav === name || a.dataset.nav === parent) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   });
   const main = $('#main');
   current?.leave?.();
+  closePanel();
   main.innerHTML = '<p class="lead">Loading…</p>';
   try {
     const mod = await loader();
@@ -95,6 +101,7 @@ async function showApp() {
   }
   shared.me = { ...me, roles: me.roles || [] };
   $$('#nav a').forEach((a) => { a.hidden = !allowed(a.dataset.nav); });
+  $$('#plusSheet [data-need]').forEach((o) => { o.hidden = !can(o.dataset.need); });
   const who = $('#whoAmI');
   if (who) who.textContent = `${me.name || me.login || me.email} · ${shared.me.roles.map((r) => ROLE_LABELS[r]).join(', ')}`;
   await shared.refresh();
@@ -130,6 +137,22 @@ $('#signOut').addEventListener('click', async () => {
   location.hash = '';
   showLogin();
 });
+
+// The + button opens a sheet; picking photos there goes straight to Snap.
+const plus = $('#plusSheet');
+$('#plusBtn').addEventListener('click', () => plus.showModal());
+plus.addEventListener('click', (e) => {
+  if (e.target === plus || e.target.closest('[data-close-plus]') || e.target.closest('a.opt')) plus.close();
+});
+for (const id of ['#plusCamera', '#plusGallery']) {
+  $(id).addEventListener('change', (e) => {
+    if (!e.target.files.length) return;
+    shared.pendingFiles = [...e.target.files];
+    e.target.value = '';
+    plus.close();
+    if (location.hash === '#upload') route(); else location.hash = '#upload';
+  });
+}
 
 window.addEventListener('hashchange', () => { if (!$('#app').hidden) route(); });
 window.addEventListener('unhandledrejection', (e) => toast(friendlyError(e.reason), true));

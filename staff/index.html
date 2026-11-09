@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>All Seazons Staff</title>
   <meta name="robots" content="noindex">
-  <meta name="theme-color" content="#1d1d1f">
+  <meta name="theme-color" content="#fff8ee">
   <link rel="icon" href="../assets/img/icon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="../assets/css/base.css">
@@ -27,14 +27,15 @@
   <div class="app" id="app" hidden>
     <aside class="side">
       <a class="side-logo" href="#home"><img src="../assets/img/logo.svg" alt="All Seazons" width="110" height="58"></a>
-      <nav class="nav" id="nav">
-        <a href="#home" data-nav="home"><span class="ico">⌂</span><span>Home</span></a>
-        <a href="#upload" data-nav="upload"><span class="ico">＋</span><span>Add toys</span></a>
-        <a href="#review" data-nav="review"><span class="ico">✓</span><span>Review</span><b class="badge" id="reviewBadge" hidden></b></a>
-        <a href="#orders" data-nav="orders"><span class="ico">✉</span><span>Orders</span><b class="badge" id="ordersBadge" hidden></b></a>
-        <a href="#stock" data-nav="stock"><span class="ico">▦</span><span>Stock</span></a>
-        <a href="#boxes" data-nav="boxes" class="more-only"><span class="ico">⧉</span><span>Boxes</span></a>
-        <a href="#settings" data-nav="settings" class="more-only"><span class="ico">⚙</span><span>Settings</span></a>
+      <nav class="nav" id="nav" aria-label="Main">
+        <a href="#home" data-nav="home"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 12 4l9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Home</span></a>
+        <a href="#stock" data-nav="stock"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg><span>Stock</span><b class="badge" id="reviewBadge" hidden></b></a>
+        <button type="button" class="plus" id="plusBtn" aria-label="Add" data-nav="plus"><svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="more-only">Add</span></button>
+        <a href="#orders" data-nav="orders"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5.5 5h13L21 13v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6z"/></svg><span>Inbox</span><b class="badge" id="ordersBadge" hidden></b></a>
+        <a href="#settings" data-nav="settings"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span>Me</span></a>
+        <a href="#review" data-nav="review" class="more-only"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg><span>Review</span></a>
+        <a href="#upload" data-nav="upload" class="more-only"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg><span>Snap toys</span></a>
+        <a href="#boxes" data-nav="boxes" class="more-only"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5v8l-9 5-9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg><span>Boxes</span></a>
       </nav>
       <div class="side-foot">
         <small class="who" id="whoAmI"></small>
@@ -44,6 +45,30 @@
     </aside>
     <main class="main" id="main" tabindex="-1"></main>
   </div>
+
+  <!-- The + button: what's new? -->
+  <dialog class="plus-sheet" id="plusSheet" aria-labelledby="plusTitle">
+    <div class="grab" aria-hidden="true"></div>
+    <div class="sheet-head"><h2 id="plusTitle">What's new?</h2><button type="button" class="x" data-close-plus aria-label="Close">×</button></div>
+    <div class="opts-list">
+      <label class="opt" data-need="stock" style="--c:var(--green)"><input type="file" accept="image/*" capture="environment" id="plusCamera" hidden>
+        <span class="oico"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg></span>
+        <span class="otext"><b>Snap new toys</b><small>Camera opens. Each photo names itself.</small></span>
+        <img class="mascot" src="../assets/img/mascots/spri.webp" alt="" width="56" height="67" loading="lazy" decoding="async"></label>
+      <a class="opt" data-need="sales" href="#sale" style="--c:var(--yellow)">
+        <span class="oico"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16l-1.5 11h-13z"/><path d="M8.5 9V7a3.5 3.5 0 0 1 7 0v2"/></svg></span>
+        <span class="otext"><b>Shop sale</b><small>A customer in the shop. Pick the toys, take the money.</small></span>
+        <img class="mascot" src="../assets/img/mascots/sammy.webp" alt="" width="55" height="67" loading="lazy" decoding="async"></a>
+      <a class="opt" data-need="sales" href="#sale?wa" style="--c:var(--orange);color:#fff">
+        <span class="oico"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-11.7 7.1L4 20l1-4A8 8 0 1 1 20 12z"/></svg></span>
+        <span class="otext"><b>WhatsApp order</b><small>Someone ordered in chat. Pick the toys for them.</small></span>
+        <img class="mascot" src="../assets/img/mascots/auty.webp" alt="" width="51" height="67" loading="lazy" decoding="async"></a>
+      <label class="opt" data-need="stock" style="--c:var(--blue-strong);color:#fff"><input type="file" accept="image/*,video/*" multiple id="plusGallery" hidden>
+        <span class="oico"><svg class="ico" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/></svg></span>
+        <span class="otext"><b>From the gallery</b><small>Photos and videos already on the phone</small></span>
+        <img class="mascot" src="../assets/img/mascots/winnie.webp" alt="" width="45" height="67" loading="lazy" decoding="async"></label>
+    </div>
+  </dialog>
 
   <script type="module" src="../assets/js/staff/app.js"></script>
 </body>

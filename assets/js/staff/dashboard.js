@@ -49,7 +49,7 @@ export async function show(main) {
   setTimeout(backfillThumbs, 1500);
   const since = weekStart();
   const sixty = new Date(Date.now() - 60 * 86400e3).toISOString();
-  const [week, open, toPack, live, review, soldItems, slow] = await Promise.all([
+  const [week, open, toPack, live, review, soldItems, slow, fresh] = await Promise.all([
     supabase.from('orders').select('total, channel').in('status', ['paid', 'packed', 'sent', 'delivered']).gte('paid_at', since),
     supabase.from('orders').select('id', { count: 'exact', head: true }).in('status', ['held', 'confirmed']),
     supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'paid'),
@@ -59,6 +59,8 @@ export async function show(main) {
       .in('orders.status', ['paid', 'packed', 'sent', 'delivered']).order('id', { ascending: false }).limit(2000),
     supabase.from('toys').select('*').eq('status', 'available')
       .lt('approved_at', sixty).order('approved_at').limit(12),
+    supabase.from('toys').select('id, code, name, price, thumb_path, photo_path, image_path').eq('status', 'available')
+      .order('approved_at', { ascending: false, nullsFirst: false }).limit(12),
   ]);
 
   const sales = (week.data || []).reduce((s, o) => s + o.total, 0);
@@ -70,16 +72,32 @@ export async function show(main) {
   const byName = countBy(items, (x) => x.name.trim().toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())).filter(([, n]) => n > 1).slice(0, 10);
   const byPrice = countBy(items, (x) => kwacha(x.price)).sort((a, b) => parseInt(a[0].slice(1).replace(/,/g, ''), 10) - parseInt(b[0].slice(1).replace(/,/g, ''), 10));
 
+  const first = (shared.me?.name || '').split(' ')[0];
+  const hour = new Date().getHours();
+  const hi = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  const story = (href, n, label, need) => (need && !can(need)) ? '' : `
+    <a class="story ${n ? '' : 'quiet'}" href="${href}"><div class="ring"><div class="in">${n ?? 0}</div></div>${label}</a>`;
   main.innerHTML = `
-    <div class="page-head"><h1>Home</h1>${can('stock') ? '<a class="btn" href="#upload">Add toys</a>' : ''}</div>
+    <section class="hello">
+      <h2>${hi}${first ? `, ${esc(first)}` : ''}!</h2>
+      <p>${(open.count || 0) + (toPack.count || 0) ? `${(open.count || 0) + (toPack.count || 0)} orders need you today.` : 'All caught up. Time to snap some toys?'}</p>
+      <img class="mascot" src="../assets/img/mascots/sammy.webp" alt="" width="104" height="127" loading="lazy" decoding="async">
+    </section>
+    <h1 class="sr-only">Home</h1>
+    <nav class="stories" aria-label="Jobs waiting">
+      ${story('#review', review.count, 'Review', 'stock')}
+      ${story('#orders', open.count, 'To confirm', 'sales')}
+      ${story('#orders', toPack.count, 'To pack', 'sales')}
+      ${story('#stock', live.count, 'In the shop', 'stock')}
+    </nav>
     <div class="kpis">
       <div class="kpi"><div class="l">Sales this week</div><div class="n">${kwacha(sales)}</div>
         ${goal ? `<div class="progress" title="Goal ${kwacha(goal)}"><span style="width:${Math.min(100, (sales / goal) * 100)}%"></span></div><div class="l">${Math.round((sales / goal) * 100)}% of ${kwacha(goal)} goal</div>` : ''}</div>
-      <a class="kpi" href="#orders"><div class="l">Orders to confirm</div><div class="n">${open.count ?? 0}</div></a>
-      <a class="kpi" href="#orders"><div class="l">Paid, to pack</div><div class="n">${toPack.count ?? 0}</div></a>
-      <a class="kpi" href="#review"><div class="l">Waiting for review</div><div class="n">${review.count ?? 0}</div></a>
       <a class="kpi" href="#stock"><div class="l">Toys in the shop</div><div class="n">${live.count ?? 0}</div></a>
     </div>
+    ${(fresh.data || []).length ? `<h2 style="font-size:20px;margin:4px 0 8px">Just added</h2>
+    <div class="added">${fresh.data.map((t) => `<a href="${can('stock') ? '#stock' : '../#' + esc(t.code || '')}"><img src="${esc(imageUrl(t.thumb_path || t.photo_path || t.image_path))}" alt="" loading="lazy" decoding="async">${esc(t.name)}<br>${kwacha(t.price)}</a>`).join('')}</div>` : ''}
+    <details class="more-box"><summary>What sells (charts)</summary>
     <div class="two">
       <section class="card-box"><h2>What sells: type of toy</h2><p class="sub">All sales so far</p>${bars(byCategory)}</section>
       <section class="card-box"><h2>Boys, girls or neutral</h2><p class="sub">Toys sold</p>${bars(byAudience, 'var(--pink-strong)')}
@@ -94,5 +112,6 @@ export async function show(main) {
           <img src="${esc(imageUrl(t.thumb_path || t.image_path))}" alt="" loading="lazy" style="width:110px;height:110px;border-radius:12px;object-fit:cover">
           ${esc(t.name)}<br><strong>${kwacha(t.price)}</strong></a>`).join('') || '<p class="sub">None. Stock is moving well.</p>'}</div>
     </section>
-    <div class="mobile-more">${can('stock') ? '<a class="btn ghost" href="#boxes">Boxes</a>' : ''}<a class="btn ghost" href="#settings">${can('owner') ? 'Settings' : 'My account'}</a><a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
+    </details>
+    <div class="mobile-more">${can('stock') ? '<a class="btn ghost" href="#boxes">Boxes</a>' : ''}<a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
 }

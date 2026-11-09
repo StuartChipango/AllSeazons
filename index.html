@@ -4,12 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>All Seazons Play · Pre-loved and new toys in Zambia</title>
-  <meta name="description" content="Quality pre-loved and new toys from K50. Shop online and order on WhatsApp. Pickup or Yango delivery in Lusaka, courier to towns across Zambia.">
+  <meta name="description" content="Quality pre-loved and new toys from K30. Shop online and order on WhatsApp. Pickup or Yango delivery in Lusaka, courier to towns across Zambia.">
   <meta property="og:title" content="All Seazons Play">
-  <meta property="og:description" content="Pre-loved and new toys from K50. Order on WhatsApp.">
+  <meta property="og:description" content="Pre-loved and new toys from K30. Order on WhatsApp.">
   <meta property="og:image" content="assets/img/og.png">
-  <meta name="theme-color" content="#f2d3e3">
+  <meta name="theme-color" content="#fff8ee">
   <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/fonts/fredoka-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="assets/css/base.css">
   <link rel="stylesheet" href="assets/css/shop.css">
 </head>
@@ -20,47 +21,56 @@
     <a class="brand" href="./" aria-label="All Seazons Play home"><img src="assets/img/logo.svg" alt="All Seazons" width="120" height="63"></a>
     <label class="search">
       <span class="sr-only">Search toys</span>
-      <input type="search" id="search" placeholder="Search toys" autocomplete="off">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+      <input type="search" id="search" placeholder="Search teddy, car, blocks…" autocomplete="off">
     </label>
-    <button class="cart-btn" id="cartBtn" aria-label="Open cart">
-      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M7 18a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm10 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4ZM3 3h2l2.4 11.2A2 2 0 0 0 9.36 16H18v-2H9.36l-.3-1.4h8.2a2 2 0 0 0 1.9-1.4L21 6H6.1L5.6 3.6A1 1 0 0 0 4.6 3H3Z"/></svg>
-      <span class="cart-count" id="cartCount">0</span>
-    </button>
+    <a class="wa-btn" id="topWa" href="#" target="_blank" rel="noopener" aria-label="Chat with us on WhatsApp">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-11.7 7.1L4 20l1-4A8 8 0 1 1 20 12z"/></svg>
+    </a>
   </header>
 
-  <section class="hero">
-    <div>
-      <h1>Play for every season</h1>
-      <p>Pre-loved and new toys, cleaned and checked, from <strong>K50</strong>. Pick your toys and finish your order on WhatsApp.</p>
-    </div>
-  </section>
-
   <main class="wrap">
-    <nav class="tabs" role="tablist" aria-label="Shop sections">
-      <button role="tab" class="tab" data-view="shop" aria-selected="true">In stock <span id="countShop"></span></button>
-      <button role="tab" class="tab" data-view="specials" aria-selected="false">Specials <span id="countSpecials"></span></button>
-      <button role="tab" class="tab" data-view="sold" aria-selected="false">Sold <span id="countSold"></span></button>
-    </nav>
+    <section class="hero">
+      <h1>Quality toys from K30</h1>
+      <p>Tap <b>+</b> on the toys you like, then send your order on WhatsApp. Delivery to every town.</p>
+      <img class="mascot" src="assets/img/mascots/sammy.webp" alt="" width="98" height="120" decoding="async" fetchpriority="low">
+    </section>
 
     <div class="filters" id="filters">
       <div class="chips" id="audienceChips" aria-label="Who is it for"></div>
-      <div class="chips" id="conditionChips" aria-label="Condition"></div>
-      <div class="chips scroll" id="priceChips" aria-label="Price"></div>
-      <div class="filter-row">
-        <select id="category" aria-label="Type of toy"><option value="">All types of toy</option></select>
-        <select id="age" aria-label="Age"><option value="">All ages</option></select>
-        <select id="sort" aria-label="Sort">
-          <option value="new">Newest first</option>
-          <option value="low">Price: low to high</option>
-          <option value="high">Price: high to low</option>
-        </select>
-      </div>
+      <div class="chips" id="ageChips" aria-label="Age"></div>
+      <div class="likes" id="likes" aria-label="What they like"></div>
+    </div>
+
+    <div class="bar-row">
+      <nav class="tabs" role="tablist" aria-label="Shop sections">
+        <button role="tab" class="tab" data-view="shop" aria-selected="true">In stock <span id="countShop"></span></button>
+        <button role="tab" class="tab" data-view="specials" aria-selected="false">Specials <span id="countSpecials"></span></button>
+        <button role="tab" class="tab" data-view="sold" aria-selected="false">Sold <span id="countSold"></span></button>
+      </nav>
+      <details class="more-filters" id="moreFilters">
+        <summary>Filters</summary>
+        <div class="more-body">
+          <div class="chips" id="conditionChips" aria-label="Condition"></div>
+          <div class="chips" id="priceChips" aria-label="Price"></div>
+          <select id="sort" aria-label="Sort">
+            <option value="new">Newest first</option>
+            <option value="low">Price: low to high</option>
+            <option value="high">Price: high to low</option>
+          </select>
+        </div>
+      </details>
     </div>
 
     <p class="sold-intro" id="soldIntro" hidden></p>
     <p class="status" id="status">Loading toys…</p>
     <div class="grid" id="grid" aria-live="polite"></div>
   </main>
+
+  <button class="cart-bar" id="cartBtn" hidden aria-label="Open my list and check out">
+    <span><span id="cartCount">0</span> <span id="cartWord">toys</span> picked</span>
+    <span class="cart-total" id="cartTotal"></span>
+  </button>
 
   <footer class="foot">
     <img src="assets/img/logo.svg" alt="" width="90" height="47">

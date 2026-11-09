@@ -9,6 +9,14 @@ export const AUDIENCES = {
 export const CONDITIONS = { used: 'Used', new: 'New' };
 export const AGES = ['0-2', '3-5', '6-8', '9+'];
 
+// How customers can pay, shown at checkout and after the order.
+export const PAYMENTS = {
+  mtn: { label: 'MTN Money', how: 'MTN Money to 0762750240 (Lashiwe Nyirenda)' },
+  airtel: { label: 'Airtel Money', how: 'Airtel Money to 0778816648 (Lashiwe Nyirenda)' },
+  bank: { label: 'Bank', how: 'FNB Zambia, Varsity Square Marketing Limited, account 63219834917, branch Commercial Suite (260001)' },
+  cash: { label: 'Cash at pickup', how: 'Cash when you collect' },
+};
+
 export function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -101,6 +109,7 @@ export function orderMessage(order, picturesUrl) {
   lines.push(`*Delivery method:* ${METHOD_LABEL[order.delivery_method] || order.delivery_method}${order.courier ? ` (${order.courier})` : ''}`);
   if (order.address) lines.push(`*Address:* ${order.address}`);
   if (order.note) lines.push(`*Note:* ${order.note}`);
+  if (PAYMENTS[order.payment]) lines.push(`*I'll pay with:* ${PAYMENTS[order.payment].label}`);
   if (picturesUrl) {
     lines.push('');
     lines.push(`*Pictures of my toys:* ${picturesUrl}`);
