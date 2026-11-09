@@ -16,11 +16,11 @@
     <form class="login-card" id="loginForm">
       <img src="../assets/img/logo.svg" alt="All Seazons" width="150" height="79">
       <h1>Staff sign in</h1>
-      <label class="field"><span>Email</span><input type="email" name="email" autocomplete="username" required></label>
+      <label class="field"><span>Sign-in name or email</span><input type="text" name="email" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
       <label class="field"><span>Password</span><input type="password" name="password" autocomplete="current-password" required></label>
       <p class="error-text" id="loginError" role="alert"></p>
       <button class="btn block" type="submit">Sign in</button>
-      <p class="hint">Staff accounts are added by the owner in Settings.</p>
+      <p class="hint">The owner adds staff in Settings, then Team.</p>
     </form>
   </section>
 
@@ -37,6 +37,7 @@
         <a href="#settings" data-nav="settings" class="more-only"><span class="ico">⚙</span><span>Settings</span></a>
       </nav>
       <div class="side-foot">
+        <small class="who" id="whoAmI"></small>
         <a href="../" target="_blank" rel="noopener">View shop ↗</a>
         <button class="linkish" id="signOut">Sign out</button>
       </div>

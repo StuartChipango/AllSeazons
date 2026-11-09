@@ -52,7 +52,7 @@ before(async () => {
   await db.connect();
   await db.query(readFileSync(new URL('./fixtures/supabase-stub.sql', import.meta.url), 'utf8'));
   await db.query(readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8'));
-  await db.query(`insert into staff(email) values ('owner@allseazons.test')`);
+  await db.query(`insert into staff(email, roles) values ('owner@allseazons.test', '{owner}')`);
   await db.query(`update towns set courier='Mazhandu', fee_small=60, fee_medium=90, fee_large=150 where name='Kitwe'`);
 });
 after(async () => {
@@ -253,4 +253,79 @@ test('the public order page shows toys and totals but no personal details', asyn
   const wrongKey = await anon(async () =>
     (await db.query('select get_order_public($1,$2) p', [r.code, 'nope'])).rows[0].p);
   assert.equal(wrongKey, null);
+});
+
+// ------------------------------------------------------------------ staff roles
+const asEmail = (email) => (fn) => as('authenticated', email, fn);
+const call = (who, sql, args = []) => who(async () => (await db.query(sql, args)).rows[0]);
+
+test('the owner adds staff with a sign-in name, password and jobs', async () => {
+  const r = await call(staff, `select * from staff_add('Mutale', 'Sales1', 'secret1', '{sales}')`);
+  assert.equal(r.email, 'sales1@staff.allseazons.shop');
+  assert.equal(r.login, 'sales1');
+  assert.deepEqual(r.roles, ['sales']);
+  const u = (await db.query(`select * from auth.users where email = $1`, [r.email])).rows[0];
+  assert.ok(u, 'a sign-in account was made');
+  assert.equal((await db.query(`select crypt('secret1', $1) = $1 as ok`, [u.encrypted_password])).rows[0].ok, true);
+  assert.equal(u.confirmation_token, '', 'empty tokens, or Supabase sign-in breaks');
+  assert.equal((await db.query(`select count(*)::int n from auth.identities where user_id = $1`, [u.id])).rows[0].n, 1);
+  await assert.rejects(call(staff, `select staff_add('Again', 'sales1', 'secret1', '{sales}')`), /already signs in/);
+  await assert.rejects(call(staff, `select staff_add('Short', 'x2', '123', '{sales}')`), /at least 6/);
+  await assert.rejects(call(staff, `select staff_add('No job', 'x3', 'secret1', '{}')`), /at least one job/);
+  await assert.rejects(call(asEmail('sales1@staff.allseazons.shop'), `select staff_add('Sneaky', 'x4', 'secret1', '{owner}')`), /Only the owner/);
+});
+
+test('each job can only do its own work', async () => {
+  await call(staff, `select staff_add('Bwalya', 'stock1', 'secret1', '{stock}')`);
+  await call(staff, `select staff_add('Chanda', 'till1', 'secret1', '{sales}')`);
+  const stockP = asEmail('stock1@staff.allseazons.shop');
+  const salesP = asEmail('till1@staff.allseazons.shop');
+  const t = await addToy({ status: 'review', price: 70 });
+  // Sales cannot change prices or approve; Stock can.
+  assert.equal(await salesP(async () => (await db.query(`update toys set price=1 where id=$1`, [t.id])).rowCount), 0);
+  await assert.rejects(call(salesP, `select approve_toys(array[$1::uuid])`, [t.id]), /Only Stock/);
+  assert.equal(await stockP(async () => (await db.query(`update toys set price=100 where id=$1`, [t.id])).rowCount), 1);
+  assert.equal((await call(stockP, `select approve_toys(array[$1::uuid]) n`, [t.id])).n, 1);
+  // Stock cannot sell; Sales can. Both can see the stock.
+  await assert.rejects(call(stockP, `select shop_sale($1)`, [JSON.stringify([{ toy_id: t.id }])]), /Only Sales/);
+  const sale = await call(salesP, `select * from shop_sale($1)`, [JSON.stringify([{ toy_id: t.id }])]);
+  assert.equal(sale.status, 'paid');
+  assert.ok((await stockP(async () => (await db.query('select id from toys')).rowCount)) > 0);
+  // A refund (cancelling a paid order) is for the owner only.
+  await assert.rejects(call(salesP, `select set_order_status($1,'cancelled')`, [sale.id]), /Only the owner/);
+  await call(staff, `select set_order_status($1,'cancelled')`, [sale.id]);
+  // Settings are for the owner only.
+  assert.equal(await salesP(async () => (await db.query(`update settings set hold_minutes=30`)).rowCount), 0);
+  // The log says who did what; only the owner can read it.
+  const log = (await db.query(`select actor, actor_name, action from activity where toy_id = $1 or order_id = $2 order by id`, [t.id, sale.id])).rows;
+  assert.ok(log.some((l) => l.action === 'toy_approved' && l.actor_name === 'Bwalya'));
+  assert.ok(log.some((l) => l.action === 'toy_price' && l.actor === 'stock1@staff.allseazons.shop'));
+  assert.ok(log.some((l) => l.action === 'shop_sale' && l.actor_name === 'Chanda'));
+  assert.ok(log.some((l) => l.action === 'order_cancelled' && l.actor === 'owner@allseazons.test'));
+  assert.equal(await salesP(async () => (await db.query('select * from activity')).rowCount), 0);
+  assert.ok(await staff(async () => (await db.query('select * from activity')).rowCount) > 0);
+});
+
+test('switching someone off locks them out, and there is always an owner', async () => {
+  await call(staff, `select staff_add('Lost Phone', 'lost1', 'secret1', '{stock,sales}')`);
+  const lost = asEmail('lost1@staff.allseazons.shop');
+  assert.equal((await call(lost, `select is_staff() ok`)).ok, true);
+  await call(staff, `select staff_update('lost1@staff.allseazons.shop', p_active => false)`);
+  assert.equal((await call(lost, `select is_staff() ok`)).ok, false);
+  assert.ok((await db.query(`select banned_until from auth.users where email='lost1@staff.allseazons.shop'`)).rows[0].banned_until);
+  await call(staff, `select staff_update('lost1@staff.allseazons.shop', p_active => true)`);
+  assert.equal((await db.query(`select banned_until from auth.users where email='lost1@staff.allseazons.shop'`)).rows[0].banned_until, null);
+  await assert.rejects(call(staff, `select staff_update('owner@allseazons.test', p_roles => '{sales}')`), /always be at least one owner/);
+  await assert.rejects(call(staff, `select staff_remove('owner@allseazons.test')`), /always be at least one owner/);
+  await call(staff, `select staff_set_password('lost1@staff.allseazons.shop', 'newpass1')`);
+  const pw = (await db.query(`select crypt('newpass1', encrypted_password) = encrypted_password ok from auth.users where email='lost1@staff.allseazons.shop'`)).rows[0];
+  assert.equal(pw.ok, true);
+  await call(staff, `select staff_remove('lost1@staff.allseazons.shop')`);
+  assert.equal((await call(lost, `select is_staff() ok`)).ok, false);
+});
+
+test('running the database file again keeps staff and their jobs', async () => {
+  await db.query(readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8'));
+  const r = (await db.query(`select roles from staff where email='owner@allseazons.test'`)).rows[0];
+  assert.deepEqual(r.roles, ['owner']);
 });

@@ -1,6 +1,6 @@
 import { esc, kwacha, AUDIENCES } from '../lib.js';
 import { supabase, imageUrl } from '../db.js';
-import { shared } from './app.js';
+import { shared, can } from './app.js';
 
 function weekStart() {
   // Monday 00:00 in Lusaka (UTC+2, no daylight saving).
@@ -51,7 +51,7 @@ export async function show(main) {
   const byPrice = countBy(items, (x) => kwacha(x.price)).sort((a, b) => parseInt(a[0].slice(1).replace(/,/g, ''), 10) - parseInt(b[0].slice(1).replace(/,/g, ''), 10));
 
   main.innerHTML = `
-    <div class="page-head"><h1>Home</h1><a class="btn" href="#upload">Add toys</a></div>
+    <div class="page-head"><h1>Home</h1>${can('stock') ? '<a class="btn" href="#upload">Add toys</a>' : ''}</div>
     <div class="kpis">
       <div class="kpi"><div class="l">Sales this week</div><div class="n">${kwacha(sales)}</div>
         ${goal ? `<div class="progress" title="Goal ${kwacha(goal)}"><span style="width:${Math.min(100, (sales / goal) * 100)}%"></span></div><div class="l">${Math.round((sales / goal) * 100)}% of ${kwacha(goal)} goal</div>` : ''}</div>
@@ -74,5 +74,5 @@ export async function show(main) {
           <img src="${esc(imageUrl(t.image_path))}" alt="" style="width:110px;height:110px;border-radius:12px;object-fit:cover">
           ${esc(t.name)}<br><strong>${kwacha(t.price)}</strong></a>`).join('') || '<p class="sub">None. Stock is moving well.</p>'}</div>
     </section>
-    <div class="mobile-more"><a class="btn ghost" href="#boxes">Boxes</a><a class="btn ghost" href="#settings">Settings</a><a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
+    <div class="mobile-more">${can('stock') ? '<a class="btn ghost" href="#boxes">Boxes</a>' : ''}<a class="btn ghost" href="#settings">${can('owner') ? 'Settings' : 'My account'}</a><a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
 }

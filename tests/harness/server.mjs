@@ -44,7 +44,7 @@ export async function resetDatabase({ seed = true } = {}) {
   await db.query(readFileSync(join(ROOT, 'supabase/schema.sql'), 'utf8'));
   await db.query(`alter role authenticator with login password 'authenticator'`);
   if (seed) {
-    await db.query(`insert into staff (email, name) values ($1, 'Owner')`, [STAFF.email]);
+    await db.query(`insert into staff (email, name, roles) values ($1, 'Owner', '{owner}')`, [STAFF.email]);
     await db.query(`update settings set whatsapp_number = '260977000111', announcement = 'Free pickup in Lusaka every day'`);
     await db.query(`update towns set courier = 'Mazhandu', fee_small = 60, fee_medium = 90, fee_large = 150 where name in ('Kitwe', 'Ndola')`);
   }
@@ -103,11 +103,18 @@ async function readBody(req) {
   return Buffer.concat(chunks);
 }
 
-function session() {
+function session(who = STAFF) {
   const now = Math.floor(Date.now() / 1000);
-  const user = { id: STAFF.id, aud: 'authenticated', role: 'authenticated', email: STAFF.email, app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() };
-  const access = jwt.sign({ sub: STAFF.id, email: STAFF.email, role: 'authenticated', aud: 'authenticated', exp: now + 3600 }, SECRET);
-  return { access_token: access, token_type: 'bearer', expires_in: 3600, expires_at: now + 3600, refresh_token: 'refresh-' + now, user };
+  const user = { id: who.id, aud: 'authenticated', role: 'authenticated', email: who.email, app_metadata: {}, user_metadata: {}, created_at: new Date().toISOString() };
+  const access = jwt.sign({ sub: who.id, email: who.email, role: 'authenticated', aud: 'authenticated', exp: now + 3600 }, SECRET);
+  return { access_token: access, token_type: 'bearer', expires_in: 3600, expires_at: now + 3600, refresh_token: `refresh~${who.id}~${who.email}`, user };
+}
+
+// Other staff are real rows in auth.users, made by staff_add().
+async function authQuery(sql, args) {
+  const db = new pg.Client({ connectionString: DB_URL });
+  await db.connect();
+  try { return (await db.query(sql, args)).rows; } finally { await db.end(); }
 }
 
 function bearerClaims(req) {
@@ -148,12 +155,25 @@ async function handle(req, res, url) {
   if (p === '/auth/v1/token') {
     const body = JSON.parse((await readBody(req)).toString() || '{}');
     const grant = url.searchParams.get('grant_type');
-    if (grant === 'password' && (body.email !== STAFF.email || body.password !== STAFF.password)) {
-      return send(res, 400, { error: 'invalid_grant', error_description: 'Invalid login credentials', code: 'invalid_credentials', msg: 'Invalid login credentials' });
+    const bad = () => send(res, 400, { error: 'invalid_grant', error_description: 'Invalid login credentials', code: 'invalid_credentials', msg: 'Invalid login credentials' });
+    if (grant === 'password') {
+      if (body.email === STAFF.email) return body.password === STAFF.password ? send(res, 200, session()) : bad();
+      const [u] = await authQuery(`select id, email from auth.users where lower(email) = lower($1)
+        and encrypted_password = crypt($2, encrypted_password) and (banned_until is null or banned_until < now())`, [body.email, body.password]);
+      return u ? send(res, 200, session(u)) : bad();
     }
-    return send(res, 200, session());
+    const [, id, email] = String(body.refresh_token || '').split('~');
+    return send(res, 200, id && email ? session({ id, email }) : session());
   }
-  if (p === '/auth/v1/user') return bearerClaims(req) ? send(res, 200, session().user) : send(res, 401, { msg: 'no session' });
+  if (p === '/auth/v1/user') {
+    const claims = bearerClaims(req);
+    if (!claims) return send(res, 401, { msg: 'no session' });
+    if (req.method === 'PUT') {
+      const body = JSON.parse((await readBody(req)).toString() || '{}');
+      if (body.password) await authQuery(`update auth.users set encrypted_password = crypt($2, gen_salt('bf')) where id = $1`, [claims.sub, body.password]);
+    }
+    return send(res, 200, session({ id: claims.sub, email: claims.email }).user);
+  }
   if (p === '/auth/v1/logout') return send(res, 204, '');
   if (p === '/auth/v1/recover') return send(res, 200, {});
 

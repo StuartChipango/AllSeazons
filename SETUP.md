@@ -12,9 +12,10 @@ About 30 minutes, once. You need: an email address, a card for the Anthropic acc
 3. Create your staff login: **Authentication → Users → Add user → Create new user**. Enter your email and a password, and tick **Auto Confirm User**.
 4. Put yourself on the staff list: back in **SQL Editor**, run this with your own email:
    ```sql
-   insert into staff (email, name) values ('you@example.com', 'Your name');
+   insert into staff (email, name, roles) values ('you@example.com', 'Your name', '{owner}');
    ```
 5. Stop strangers from signing up: **Authentication → Sign In / Providers**, turn off **Allow new users to sign up**.
+6. Everyone else is added from the staff app: **Settings → Team → Add a person**. Give them a short sign-in name (no email needed), a password, and their jobs: **Owner** (everything), **Stock** (photos, review, stock, boxes) or **Sales** (orders, shop sales, receipts). Switching someone off signs them out on every phone. **Settings → Who did what** shows every approval, price change, sale and order update with the person's name.
 6. Click **Connect** at the top of the project (or open **Project Settings → API**) and copy two values: the **Project URL** and the **anon / publishable key**. Paste them into [`assets/js/config.js`](assets/js/config.js). (The anon key is meant to be public; the database rules protect your data.)
 
 ## 2. Naming toys
