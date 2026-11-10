@@ -34,7 +34,8 @@ function watch(page) {
 
 before(async () => {
   h = await startHarness();
-  browser = await playwright.chromium.launch();
+  // A pretend camera, so the in-app camera can be tested.
+  browser = await playwright.chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
   const staffContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   // Most tests use the pretend online AI; one test below names on the device.
   await staffContext.addInitScript(() => { if (!localStorage.getItem('naming')) localStorage.setItem('naming', 'online'); });
@@ -468,7 +469,19 @@ test('on a phone: bottom tabs, the + sheet, a shop sale and a WhatsApp order', a
   assert.match(link.searchParams.get('text'), /MTN Money to 0762750240/);
   await shot(phone, '33-phone-wa-order');
 
-  await phone.goto(`${h.url}/staff/#upload`);
+  await ctx.grantPermissions(['camera']);
+  await phone.goto(`${h.url}/staff/#home`);
+  await phone.click('#plusBtn');
+  await phone.getByRole('link', { name: /Snap new toys/ }).click();
+  await phone.locator('.cam video').waitFor();
+  await phone.waitForFunction(() => document.querySelector('.cam video').videoWidth > 0);
+  await shot(phone, '36-phone-camera');
+  await phone.locator('.cam-shoot').click();
+  await phone.locator('.cam-count').getByText('1 taken').waitFor();
+  await phone.getByRole('button', { name: 'Done' }).click();
+  await phone.locator('.cam').waitFor({ state: 'detached' });
+  await phone.locator('.queue li').first().waitFor();
+  await phone.getByText(/1 of 1 ready/).waitFor({ timeout: 30000 });
   await phone.locator('.shutter').waitFor();
   assert.equal(await phone.locator('.side').isVisible(), false, 'the shutter bar replaces the tabs');
   await shot(phone, '34-phone-snap');

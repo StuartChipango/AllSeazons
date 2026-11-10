@@ -326,3 +326,42 @@ dialog.panel .close { position: sticky; top: 10px; float: right; margin: 10px 10
 .stack-sec.open .stack-head .n { color: var(--ink); }
 .stack-sec .orders { margin-top: 12px; }
 .stack .none { color: var(--muted); font-weight: 700; padding: 6px 4px; margin: 0; }
+
+/* Pro camera */
+html.cam-open, html.cam-open body { overflow: hidden; }
+.cam { position: fixed; inset: 0; z-index: 200; background: #000; color: #fff; display: flex; flex-direction: column; }
+.cam video { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #000; }
+.cam-grid { position: absolute; inset: 64px 0 210px; pointer-events: none;
+  background: linear-gradient(to right, transparent 33.2%, rgba(255,255,255,.35) 33.3%, transparent 33.5%, transparent 66.5%, rgba(255,255,255,.35) 66.6%, transparent 66.8%),
+              linear-gradient(to bottom, transparent 33.2%, rgba(255,255,255,.35) 33.3%, transparent 33.5%, transparent 66.5%, rgba(255,255,255,.35) 66.6%, transparent 66.8%); }
+.cam-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+.cam-flash.go { animation: camflash .25s ease-out; }
+@keyframes camflash { from { opacity: .7; } to { opacity: 0; } }
+.cam-top { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+  background: linear-gradient(rgba(0,0,0,.6), transparent); }
+.cam-count { flex: 1; text-align: center; font: 700 15px var(--display); }
+.cam-btn { width: 46px; height: 46px; border-radius: 50%; border: 2px solid rgba(255,255,255,.8); background: rgba(0,0,0,.35); color: #fff; font: 700 22px var(--display); cursor: pointer; }
+.cam-btn[aria-pressed="true"] { background: var(--yellow); color: var(--ink); border-color: var(--yellow); }
+.cam-msg { position: absolute; top: 40%; left: 20px; right: 20px; text-align: center; font-weight: 700; }
+.cam-msg:empty { display: none; }
+.cam-focus { position: absolute; width: 70px; height: 70px; margin: -35px 0 0 -35px; border: 2px solid var(--yellow); border-radius: 12px; pointer-events: none; animation: camfocus .9s ease-out forwards; }
+@keyframes camfocus { from { transform: scale(1.4); opacity: 1; } 60% { transform: scale(1); opacity: 1; } to { opacity: 0; } }
+.cam-panel { background: rgba(0,0,0,.85); padding: 10px 12px calc(16px + env(safe-area-inset-bottom)); display: grid; gap: 10px; }
+.cam-slider { display: flex; align-items: center; gap: 10px; }
+.cam-slider input { flex: 1; accent-color: var(--yellow); min-height: 36px; }
+.cam-val { min-width: 64px; text-align: right; font: 700 15px var(--display); color: var(--yellow); }
+.cam-auto { border: 1.5px solid #fff; background: none; color: #fff; border-radius: 12px; padding: 6px 10px; font-weight: 700; cursor: pointer; }
+.cam-chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+.cam-chips::-webkit-scrollbar { display: none; }
+.cam-chip { flex: none; display: grid; justify-items: center; min-width: 70px; padding: 6px 10px; border-radius: 14px; border: 1.5px solid rgba(255,255,255,.5);
+  background: none; color: #fff; font: 700 13px var(--body); cursor: pointer; }
+.cam-chip small { color: var(--yellow); font-size: 12px; }
+.cam-chip.on { background: #fff; color: var(--ink); }
+.cam-chip.on small { color: var(--orange); }
+.cam-hint { color: #ccc; font-size: 13px; padding: 6px 0; }
+.cam-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
+.cam-last { width: 52px; height: 52px; border-radius: 12px; border: 2px solid #fff; background: #222 center / cover; }
+.cam-shoot { width: 80px; height: 80px; border-radius: 50%; border: 4px solid #fff; background: none; padding: 5px; cursor: pointer; }
+.cam-shoot span { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--orange); }
+.cam-shoot:active span { transform: scale(.9); }
+.cam-done { justify-self: end; min-height: 48px; padding: 0 18px; border-radius: 16px; border: 0; background: var(--green); color: var(--ink); font: 700 16px var(--display); cursor: pointer; }

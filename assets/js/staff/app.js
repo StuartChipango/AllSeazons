@@ -1,5 +1,5 @@
 import { supabase, configured, friendlyError } from '../db.js';
-import { $, $$, toast, closePanel } from './ui.js';
+import { $, $$, toast, closePanel, keepFiles } from './ui.js';
 
 // Shared lookups every page uses, loaded once after sign-in.
 export const ROLE_LABELS = { owner: 'Owner', stock: 'Stock', sales: 'Sales' };
@@ -142,16 +142,16 @@ $('#signOut').addEventListener('click', async () => {
 const plus = $('#plusSheet');
 $('#plusBtn').addEventListener('click', () => {
   // Clear last time's picks here, never while their photos are still being read.
-  for (const id of ['#plusCamera', '#plusGallery']) $(id).value = '';
+  $('#plusGallery').value = '';
   plus.showModal();
 });
 plus.addEventListener('click', (e) => {
   if (e.target === plus || e.target.closest('[data-close-plus]') || e.target.closest('a.opt')) plus.close();
 });
-for (const id of ['#plusCamera', '#plusGallery']) {
-  $(id).addEventListener('change', (e) => {
+for (const id of ['#plusGallery']) {
+  $(id).addEventListener('change', async (e) => {
     if (!e.target.files.length) return;
-    shared.pendingFiles = [...e.target.files];
+    shared.pendingFiles = await keepFiles(e.target.files);
     plus.close();
     if (location.hash === '#upload') route(); else location.hash = '#upload';
   });

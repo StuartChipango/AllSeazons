@@ -88,3 +88,16 @@ export function busy(button, on, text) {
     if (button.dataset.label) button.innerHTML = button.dataset.label;
   }
 }
+
+// Some Android phones only let a page read picked photos for a short time
+// (or until the file picker is redrawn), so copy them into memory at once.
+export async function keepFiles(list) {
+  return Promise.all([...list].map(async (f) => {
+    try {
+      const buf = await f.arrayBuffer();
+      return new File([buf], f.name, { type: f.type, lastModified: f.lastModified });
+    } catch {
+      return f;
+    }
+  }));
+}
