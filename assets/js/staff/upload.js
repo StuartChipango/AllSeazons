@@ -2,7 +2,8 @@ import { esc, kwacha, parseCsv, packLabels, labelKey } from '../lib.js';
 import { readZip } from '../unzip.js';
 import { friendlyError } from '../db.js';
 import { shared, refreshBadges } from './app.js';
-import { $, $$, seg } from './ui.js';
+import { $, $$, seg, keepFiles } from './ui.js';
+import { openCamera, cameraSupported } from './camera.js';
 import { addToyFromPhoto, addMedia, namingMode, setNamingMode } from './photos.js';
 import { loadBitmap, toJpeg } from '../frame.js';
 
@@ -27,6 +28,16 @@ export async function show(main) {
     shared.pendingFiles = null;
     addFiles(files);
   }
+  // "Snap new toys" in the + menu opens the camera straight away.
+  if (location.hash.includes('?cam')) {
+    history.replaceState(null, '', '#upload');
+    startCamera();
+  }
+}
+
+function startCamera() {
+  if (!cameraSupported()) return $('#camera', root)?.click();
+  openCamera({ onShot: (file) => addFiles([file]) });
 }
 
 export function leave() {
@@ -98,7 +109,8 @@ function render() {
 
     <div class="shutter">
       <label class="gal" aria-label="Pick from gallery">${GALLERY}<input type="file" id="files" accept="image/*,video/*" multiple hidden></label>
-      <label class="shoot" aria-label="Take photo"><span>${CAMERA}</span><input type="file" id="camera" accept="image/*" capture="environment" hidden></label>
+      ${cameraSupported() ? `<button type="button" class="shoot" id="shootBtn" aria-label="Open camera"><span>${CAMERA}</span></button>` : ''}
+      <label class="shoot" aria-label="Take photo" ${cameraSupported() ? 'hidden' : ''}><span>${CAMERA}</span><input type="file" id="camera" accept="image/*" capture="environment" hidden></label>
       <a class="btn" id="reviewGo" href="#review">Review${done ? ' ' + done : ''}</a>
     </div>
   `;
@@ -113,11 +125,13 @@ function wire() {
     else opts[b.dataset.seg] = b.dataset.value;
     render();
   });
+  const shoot = $('#shootBtn', root);
+  if (shoot) shoot.onclick = startCamera;
   $('#moreOpts', root).ontoggle = (e) => { moreOpen = e.target.open; };
   $('#boxSel', root).onchange = (e) => { opts.box_id = e.target.value; };
   const drop = $('#drop', root);
   for (const id of ['#files', '#camera', '#folder', '#pack']) {
-    $(id, root).onchange = (e) => addFiles([...e.target.files]);
+    $(id, root).onchange = async (e) => addFiles(await keepFiles(e.target.files));
   }
   root.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
   root.ondragleave = () => drop.classList.remove('over');
