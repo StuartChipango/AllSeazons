@@ -56,7 +56,7 @@ function render() {
     <section class="snap-card" aria-live="polite">
       <h2>${jobs.length ? `${done} of ${jobs.length} ready` : 'Ready when you are'}</h2>
       <p>${jobs.length ? (done < jobs.length ? 'Keep going! Each toy gets its name while you take the next one.' : `${named} named. Check them in Review.`) : 'Tap the orange button. One photo per toy, or a few angles in a row.'}</p>
-      <img class="mascot" src="../assets/img/mascots/spri.webp" alt="" width="84" height="100" loading="lazy" decoding="async">
+      <img class="mascot" src="../assets/img/mascots/auty.webp" alt="" width="76" height="100" loading="lazy" decoding="async">
     </section>
     ${notice ? `<p class="${notice.bad ? 'st bad' : 'st ok'}" role="status">${esc(notice.text)}</p>` : ''}
 
