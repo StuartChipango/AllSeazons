@@ -55,21 +55,33 @@ function loadFrameImage(audience, tag) {
 
 // Load a File/Blob as something canvas can draw, with phone photos turned
 // the right way up.
+// Opens a photo for drawing. Phone cameras make very big photos that some
+// phones cannot open in one go, so if the full size fails we ask the browser
+// for a smaller copy (everything is saved at 1600 px or less anyway).
 export async function loadBitmap(blob) {
+  const reasons = [];
   if ('createImageBitmap' in window) {
     try {
       return await createImageBitmap(blob, { imageOrientation: 'from-image' });
-    } catch { /* fall back below */ }
+    } catch (e) { reasons.push(e.name || e.message); }
+    try {
+      return await createImageBitmap(blob, { imageOrientation: 'from-image', resizeWidth: 1600, resizeQuality: 'high' });
+    } catch (e) { reasons.push(e.name || e.message); }
   }
   const url = URL.createObjectURL(blob);
   try {
     const img = new Image();
-    img.decoding = 'async';
-    img.src = url;
-    await img.decode();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error('img'));
+      img.src = url;
+    });
+    if (!(img.naturalWidth > 0)) throw new Error('empty');
     return img;
-  } catch {
-    throw new Error('This photo type cannot be opened here. Please use JPEG or PNG photos.');
+  } catch (e) {
+    reasons.push(e.name || e.message);
+    console.warn('photo could not be opened', blob?.type, blob?.size, reasons);
+    throw new Error(`This photo could not be opened (${blob?.type || 'unknown type'}, ${Math.round((blob?.size || 0) / 1e6)} MB). Try again, or send it to yourself on WhatsApp and pick that copy.`);
   } finally {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
