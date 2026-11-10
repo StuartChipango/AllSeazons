@@ -68,7 +68,7 @@ body { background: var(--bg); }
 .opt .otext { flex: 1; position: relative; z-index: 1; }
 .opt b { display: block; font: 700 19px var(--display); }
 .opt small { display: block; font-size: 13px; font-weight: 700; opacity: .85; }
-.opt .mascot { position: absolute; right: 4px; bottom: -14px; width: 56px; opacity: .95; }
+.opt .mascot { position: absolute; right: 4px; bottom: -14px; width: 56px; }
 .opt .otext { padding-right: 44px; }
 
 /* Cards and stats. */
@@ -261,7 +261,7 @@ dialog.panel .close { position: sticky; top: 10px; float: right; margin: 10px 10
 .tiers .chip button { border: 0; background: none; cursor: pointer; font-size: 16px; padding: 0 0 0 4px; }
 
 /* Me */
-.me-top { position: relative; height: 120px; margin: -14px -14px 0; background: var(--blue); border-bottom: 2.5px solid var(--ink); overflow: hidden; }
+.me-top { position: relative; height: 120px; margin: -14px -14px 0; background: var(--pink); border-bottom: 2.5px solid var(--ink); overflow: hidden; }
 @media (min-width: 821px) { .me-top { margin: -20px -24px 0; border-radius: 0 0 26px 26px; } }
 .me-top .mascot { position: absolute; bottom: -30px; width: 64px; }
 .me-id { display: flex; align-items: flex-end; gap: 14px; margin: -38px 0 16px 4px; position: relative; }

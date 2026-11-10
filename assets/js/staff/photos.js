@@ -99,9 +99,23 @@ export async function makeThumb(toy) {
   c.width = c.height = side;
   c.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, side, side);
   const thumb_path = await uploadThumb(toy.id, c);
-  const { error } = await supabase.from('toys').update({ thumb_path }).eq('id', toy.id);
+  const { error } = await saveToy(toy.id, { thumb_path });
   if (error) throw error;
   return thumb_path;
+}
+
+// Saves changes to a toy. Until the latest database file is run, some newer
+// columns (like thumb_path) do not exist yet: leave those out and save the rest.
+export async function saveToy(id, changes) {
+  let rest = { ...changes };
+  for (let i = 0; i < 4; i++) {
+    const res = await supabase.from('toys').update(rest).eq('id', id).select().single();
+    const missing = /Could not find the '([^']+)' column|column [^ ]*\.?"?([a-z_]+)"? of relation|column "?([a-z_]+)"? does not exist/i.exec(res.error?.message || '');
+    const col = missing && (missing[1] || missing[2] || missing[3]);
+    if (!col || !(col in rest)) return res;
+    delete rest[col];
+  }
+  return supabase.from('toys').update(rest).eq('id', id).select().single();
 }
 
 // One new photo -> one toy waiting on the Review page.
@@ -164,7 +178,7 @@ export async function addToyFromPhoto(file, options, onStep = () => {}) {
 
     onStep('Adding the frame');
     const [imagePath, plain] = await Promise.all([uploadFramed(toy.id, src, fields), uploadPlain(toy.id, src, fields.focus)]);
-    const { data: saved, error: saveError } = await supabase.from('toys').update({
+    const { data: saved, error: saveError } = await saveToy(toy.id, {
       ...fields,
       raw_path: rawPath,
       has_cutout: !!src.cutout,
@@ -172,7 +186,7 @@ export async function addToyFromPhoto(file, options, onStep = () => {}) {
       ...plain,
       ai_labels: labels ? { ...labels } : { error: aiError },
       needs_attention: !labels || labels.confidence === 'low',
-    }).eq('id', toy.id).select().single();
+    });
     if (saveError) throw saveError;
     bitmaps.set(toy.id, src);
     return { toy: saved, aiError };
@@ -210,8 +224,7 @@ export async function reframe(toy, changes) {
   const imagePath = await uploadFramed(toy.id, src, fields);
   // Toys from before the website used plain photos get theirs now.
   if (!toy.photo_path && !changes.photo_path) changes = { ...changes, ...(await uploadPlain(toy.id, src, fields.focus)) };
-  const { data, error } = await supabase.from('toys').update({ ...changes, image_path: imagePath })
-    .eq('id', toy.id).select().single();
+  const { data, error } = await saveToy(toy.id, { ...changes, image_path: imagePath });
   if (error) throw error;
   if (toy.image_path && toy.image_path !== imagePath) {
     supabase.storage.from('toys').remove([toy.image_path]).catch(() => {});
