@@ -12,7 +12,8 @@ const SAME_TOY = 0.9;
 const jobs = [];
 let running = 0;
 let root = null;
-const PARALLEL = 2;
+// One photo at a time on a phone, so big camera photos do not run it out of memory.
+const PARALLEL = window.matchMedia?.('(pointer: coarse)').matches ? 1 : 2;
 let notice = null;
 let moreOpen = false;
 
@@ -116,7 +117,7 @@ function wire() {
   $('#boxSel', root).onchange = (e) => { opts.box_id = e.target.value; };
   const drop = $('#drop', root);
   for (const id of ['#files', '#camera', '#folder', '#pack']) {
-    $(id, root).onchange = (e) => { const files = [...e.target.files]; e.target.value = ''; addFiles(files); };
+    $(id, root).onchange = (e) => addFiles([...e.target.files]);
   }
   root.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
   root.ondragleave = () => drop.classList.remove('over');
@@ -218,8 +219,13 @@ async function run(job) {
       render();
       const { imageVector, similarity } = await import('./recognise.js');
       // If the recogniser cannot load, the photo just becomes its own toy.
-      job.vector = await imageVector(await toJpeg(await loadBitmap(job.file), 512, 0.85), (s) => { job.step = s + '…'; render(); })
-        .catch(() => null);
+      // A photo the recogniser cannot read just becomes its own toy.
+      job.vector = await (async () => {
+        const bmp = await loadBitmap(job.file);
+        const small = await toJpeg(bmp, 512, 0.85);
+        bmp.close?.();
+        return imageVector(small, (s) => { job.step = s + '…'; render(); });
+      })().catch(() => null);
       const before = job.prev && !job.prev.video ? job.prev : null;
       const owner = before?.owner;
       if (owner?.toy && job.vector && before.vector && similarity(job.vector, before.vector) >= SAME_TOY) {

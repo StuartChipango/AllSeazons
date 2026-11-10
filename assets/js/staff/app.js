@@ -140,7 +140,11 @@ $('#signOut').addEventListener('click', async () => {
 
 // The + button opens a sheet; picking photos there goes straight to Snap.
 const plus = $('#plusSheet');
-$('#plusBtn').addEventListener('click', () => plus.showModal());
+$('#plusBtn').addEventListener('click', () => {
+  // Clear last time's picks here, never while their photos are still being read.
+  for (const id of ['#plusCamera', '#plusGallery']) $(id).value = '';
+  plus.showModal();
+});
 plus.addEventListener('click', (e) => {
   if (e.target === plus || e.target.closest('[data-close-plus]') || e.target.closest('a.opt')) plus.close();
 });
@@ -148,7 +152,6 @@ for (const id of ['#plusCamera', '#plusGallery']) {
   $(id).addEventListener('change', (e) => {
     if (!e.target.files.length) return;
     shared.pendingFiles = [...e.target.files];
-    e.target.value = '';
     plus.close();
     if (location.hash === '#upload') route(); else location.hash = '#upload';
   });
