@@ -2,9 +2,9 @@
 // here, so these can be tested with Node.
 
 export const AUDIENCES = {
-  boys: { label: 'Boys', color: '#5f9fc4' },
-  girls: { label: 'Girls', color: '#ec9cc1' },
-  neutral: { label: 'Neutral', color: '#9cc9a6' },
+  boys: { label: 'Boys' },
+  girls: { label: 'Girls' },
+  neutral: { label: 'Neutral' },
 };
 export const CONDITIONS = { used: 'Used', new: 'New' };
 export const AGES = ['0-2', '3-5', '6-8', '9+'];
@@ -242,4 +242,112 @@ export function packLabels(rows) {
     });
   }
   return map;
+}
+
+// ------------------------------------------------------------ website traffic
+
+// Where a visitor came from, in words the owner reads in the staff app.
+export const TRAFFIC_SOURCES = {
+  facebook: { label: 'Facebook' },
+  whatsapp: { label: 'WhatsApp' },
+  instagram: { label: 'Instagram' },
+  tiktok: { label: 'TikTok' },
+  search: { label: 'Google and search' },
+  poster: { label: 'Poster or QR code' },
+  x: { label: 'X (Twitter)' },
+  youtube: { label: 'YouTube' },
+  email: { label: 'Email' },
+  other: { label: 'Other websites' },
+  direct: { label: 'Direct or unknown' },
+};
+
+// Ready-made tracked links: allseazons.shop/?src=<code>. The code says
+// where the link was posted, so visits from it are counted under that place
+// even when the app (WhatsApp above all) hides where people came from.
+export const LINK_CHANNELS = [
+  { code: 'wa-status', source: 'whatsapp', label: 'WhatsApp status' },
+  { code: 'wa-group', source: 'whatsapp', label: 'WhatsApp groups' },
+  { code: 'wa-chat', source: 'whatsapp', label: 'WhatsApp chats and broadcasts' },
+  { code: 'wa-bio', source: 'whatsapp', label: 'WhatsApp business profile' },
+  { code: 'fb', source: 'facebook', label: 'Facebook posts' },
+  { code: 'fb-ad', source: 'facebook', label: 'Facebook ads' },
+  { code: 'fb-group', source: 'facebook', label: 'Facebook groups and Marketplace' },
+  { code: 'ig', source: 'instagram', label: 'Instagram posts and stories' },
+  { code: 'ig-bio', source: 'instagram', label: 'Instagram bio link' },
+  { code: 'tiktok', source: 'tiktok', label: 'TikTok' },
+  { code: 'qr', source: 'poster', label: 'Shop poster, flyer or QR code' },
+];
+
+const SRC_ALIASES = {
+  facebook: 'facebook', fb: 'facebook', messenger: 'facebook', meta: 'facebook',
+  whatsapp: 'whatsapp', wa: 'whatsapp', instagram: 'instagram', ig: 'instagram', insta: 'instagram',
+  tiktok: 'tiktok', tt: 'tiktok', google: 'search', search: 'search', qr: 'poster', poster: 'poster', flyer: 'poster',
+  x: 'x', twitter: 'x', youtube: 'youtube', yt: 'youtube', email: 'email', mail: 'email',
+};
+
+const clean = (v, n = 40) => String(v || '').toLowerCase().trim().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, n);
+
+// A tag such as "wa-status", "fb", "facebook" or "utm_source=ig" -> a source key.
+export function sourceFromTag(tag) {
+  const t = clean(tag);
+  if (!t) return '';
+  const known = LINK_CHANNELS.find((c) => c.code === t);
+  if (known) return known.source;
+  return SRC_ALIASES[t] || SRC_ALIASES[t.split(/[-_.]/)[0]] || 'other';
+}
+
+function hostOf(url) {
+  try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; }
+}
+
+// Works out where this visit came from. Tracked links (?src= or utm_source=)
+// win; then the page that linked here; then the app the shop is opened in.
+//   { search: location.search, referrer: document.referrer, ua: navigator.userAgent, host: location.hostname }
+export function trafficSource({ search = '', referrer = '', ua = '', host = '' } = {}) {
+  const q = new URLSearchParams(search);
+  const tag = q.get('src') || q.get('utm_source') || q.get('ref') || '';
+  const campaign = clean(q.get('c') || q.get('utm_campaign'), 60);
+  const refHost = hostOf(referrer);
+  const ownHost = String(host || '').toLowerCase().replace(/^www\./, '');
+  const ref = refHost && refHost !== ownHost ? refHost : '';
+  const out = (source, via = '') => ({ source, via: clean(via, 40), campaign, referrer: ref });
+
+  if (tag) return out(sourceFromTag(tag), tag);
+  if (q.has('fbclid')) return out('facebook', ref || 'fbclid');
+  if (q.has('gclid') || q.has('gbraid') || q.has('wbraid')) return out('search', 'google-ads');
+  if (q.has('igshid')) return out('instagram', ref);
+  if (q.has('ttclid')) return out('tiktok', ref);
+
+  if (ref) {
+    if (/(^|\.)(facebook\.com|fb\.com|fb\.me|messenger\.com)$/.test(ref)) return out('facebook', ref);
+    if (/(^|\.)instagram\.com$/.test(ref)) return out('instagram', ref);
+    if (/(^|\.)(whatsapp\.com|whatsapp\.net|wa\.me)$/.test(ref)) return out('whatsapp', ref);
+    if (/(^|\.)tiktok\.com$/.test(ref)) return out('tiktok', ref);
+    if (/(^|\.)(t\.co|twitter\.com|x\.com)$/.test(ref)) return out('x', ref);
+    if (/(^|\.)(youtube\.com|youtu\.be)$/.test(ref)) return out('youtube', ref);
+    if (/(^|\.)(google\.[a-z.]+|bing\.com|yahoo\.com|duckduckgo\.com|yandex\.[a-z.]+|ecosia\.org|baidu\.com|search\.brave\.com|startpage\.com)$/.test(ref)
+      || ref === 'com.google.android.googlequicksearchbox') return out('search', ref);
+    if (/^com\.google\.android\.gm$/.test(ref) || /(^|\.)(mail\.google\.com|outlook\.live\.com|mail\.yahoo\.com)$/.test(ref)) return out('email', ref);
+    if (ref === 'com.whatsapp' || ref === 'com.whatsapp.w4b') return out('whatsapp', ref);
+    if (ref === 'com.facebook.katana' || ref === 'com.facebook.orca' || ref === 'com.facebook.lite') return out('facebook', ref);
+    return out('other', ref);
+  }
+
+  // No referrer: the in-app browsers of Facebook and Instagram still say who they are.
+  if (/FBAN|FBAV|FB_IAB|FBIOS|FB4A|FBLC|MessengerLite/i.test(ua)) return out('facebook', 'facebook-app');
+  if (/Instagram/i.test(ua)) return out('instagram', 'instagram-app');
+  if (/musical_ly|BytedanceWebview|TikTok/i.test(ua)) return out('tiktok', 'tiktok-app');
+  if (/WhatsApp/i.test(ua)) return out('whatsapp', 'whatsapp-app');
+  return out('direct');
+}
+
+// allseazons.shop/?src=wa-status&c=christmas (campaign is optional).
+export function trackedLink(base, code, campaign = '') {
+  const url = new URL(base);
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('src', clean(code) || 'link');
+  const c = clean(campaign, 60);
+  if (c) url.searchParams.set('c', c);
+  return url.href;
 }

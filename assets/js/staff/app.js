@@ -41,10 +41,11 @@ const pages = {
   boxes: () => import('./boxes.js'),
   settings: () => import('./settings.js'),
   sale: () => import('./sale.js'),
+  traffic: () => import('./traffic.js'),
 };
 
 // Which job each page needs (null = everyone).
-const NEEDS = { home: null, upload: 'stock', review: 'stock', stock: 'stock', boxes: 'stock', orders: 'sales', sale: 'sales', settings: null };
+const NEEDS = { home: null, upload: 'stock', review: 'stock', stock: 'stock', boxes: 'stock', orders: 'sales', sale: 'sales', settings: null, traffic: 'owner' };
 const allowed = (name) => !NEEDS[name] || can(NEEDS[name]);
 
 let current = null;
@@ -100,6 +101,9 @@ async function showApp() {
     return;
   }
   shared.me = { ...me, roles: me.roles || [] };
+  // Staff phones are not counted as shop visitors (the owner can change this
+  // on the Website visitors page).
+  try { if (localStorage.getItem('as_staff_device') === null) localStorage.setItem('as_staff_device', 'true'); } catch { /* private mode */ }
   $$('#nav a').forEach((a) => { a.hidden = !allowed(a.dataset.nav); });
   $$('#plusSheet [data-need]').forEach((o) => { o.hidden = !can(o.dataset.need); });
   const who = $('#whoAmI');

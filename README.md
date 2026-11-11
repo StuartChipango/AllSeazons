@@ -17,6 +17,7 @@ staff/                        staff app and sticker printing
 assets/js/lib.js              shared helpers (prices, WhatsApp message, CSV)
 assets/js/frame.js            draws the boys/girls/neutral frame and USED/NEW tag
 assets/js/shop.js             shop
+assets/js/track.js            counts shop visits and where they came from (see SETUP.md step 6)
 assets/js/staff/*.js          staff app pages
 assets/vendor/supabase.js     supabase-js 2.45.4, bundled
 supabase/schema.sql           tables, stock functions, security rules, storage
