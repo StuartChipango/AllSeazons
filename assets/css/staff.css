@@ -365,3 +365,23 @@ html.cam-open, html.cam-open body { overflow: hidden; }
 .cam-shoot span { display: block; width: 100%; height: 100%; border-radius: 50%; background: var(--orange); }
 .cam-shoot:active span { transform: scale(.9); }
 .cam-done { justify-self: end; min-height: 48px; padding: 0 18px; border-radius: 16px; border: 0; background: var(--green); color: var(--ink); font: 700 16px var(--display); cursor: pointer; }
+
+/* Website visitors */
+.src-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 12px; }
+.src-row { display: grid; gap: 4px; }
+.src-top { display: flex; justify-content: space-between; gap: 8px; font-size: 15px; }
+.src-top span { font-weight: 700; white-space: nowrap; }
+.src-bar { display: block; height: 12px; border-radius: 0 6px 6px 0; background: var(--blue-strong); }
+.src-row small { color: var(--muted); font-size: 13px; }
+.day-chart { display: flex; align-items: flex-end; gap: 2px; height: 130px; margin-top: 8px; border-bottom: 1.5px solid var(--line); }
+.day-chart .day { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 0; }
+.day-chart .day i { display: block; width: 100%; border-radius: 4px 4px 0 0; background: var(--blue-strong); }
+.day-axis { display: flex; justify-content: space-between; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.big-n { font: 700 44px var(--display); margin: 6px 0 0; }
+.mini-table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 6px; }
+.mini-table th { text-align: left; color: var(--muted); font-size: 12px; font-weight: 700; padding: 4px 6px 6px 0; border-bottom: 1.5px solid var(--line); }
+.mini-table td { padding: 7px 6px 7px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.mini-table .num, .mini-table th + th { text-align: right; white-space: nowrap; }
+.link-out { font: 600 15px ui-monospace, monospace; background: var(--bg); border: 2px dashed var(--line); border-radius: 12px; padding: 10px 12px; margin: 0 0 12px; overflow-wrap: anywhere; user-select: all; }
+.check-line { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; margin-top: 10px; }
+.check-line input { width: 22px; height: 22px; flex: none; }

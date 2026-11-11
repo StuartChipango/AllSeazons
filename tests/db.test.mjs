@@ -324,6 +324,41 @@ test('switching someone off locks them out, and there is always an owner', async
   assert.equal((await call(lost, `select is_staff() ok`)).ok, false);
 });
 
+test('website traffic: the shop records visits, only the owner reads the report', async () => {
+  const track = (p) => call(anon, `select track($1)`, [JSON.stringify(p)]);
+  const base = { visitor: 'v1', session: 's1', source: 'facebook', via: 'fb', campaign: 'Xmas', device: 'phone' };
+  await track({ ...base, kind: 'visit' });
+  await track({ ...base, kind: 'visit', visitor: 'v2', session: 's2', source: 'whatsapp', via: 'wa-status' });
+  await track({ ...base, kind: 'toy', toy_code: 'abc1' });
+  await track({ ...base, kind: 'whatsapp' });
+  // Rubbish is ignored, not stored.
+  await track({ kind: 'hack', visitor: 'v1', session: 's1' });
+  await track({ kind: 'visit', session: 's9' });
+  // Orders count only when real, once, and with the order's own total.
+  const t = await addToy({ price: 80 });
+  const o = await place([{ toy_id: t.id }]);
+  await track({ ...base, kind: 'order', order_code: o.code, amount: 999999 });
+  await track({ ...base, kind: 'order', order_code: o.code });
+  await track({ ...base, kind: 'order', order_code: 'ORD-0' });
+  // The website cannot read or change the rows.
+  assert.equal(await anon(async () => (await db.query('select * from visits')).rowCount), 0);
+  await assert.rejects(anon(() => db.query(`insert into visits(kind, visitor, session) values ('visit','x','y')`)));
+  await assert.rejects(call(anon, 'select traffic_report(7)'), /permission denied/);
+  await call(staff, `select staff_add('Mutale', 'stock9', 'secret1', '{stock}')`);
+  await assert.rejects(call(asEmail('stock9@staff.allseazons.shop'), 'select traffic_report(7)'), /Only the owner/);
+
+  const r = (await call(staff, 'select traffic_report(7) r')).r;
+  assert.deepEqual(r.totals, { visits: 2, visitors: 2, toy_views: 1, whatsapp: 1, orders: 1, sales: o.total, phones: 2, computers: 0 });
+  const fb = r.sources.find((x) => x.source === 'facebook');
+  assert.deepEqual({ ...fb }, { source: 'facebook', visits: 1, visitors: 1, toy_views: 1, whatsapp: 1, orders: 1, sales: o.total });
+  assert.equal(r.sources.find((x) => x.source === 'whatsapp').visits, 1);
+  assert.equal(r.campaigns[0].campaign, 'xmas');
+  assert.equal(r.toys[0].code, 'ABC1');
+  assert.equal(r.days.length, 7);
+  assert.equal(r.days.at(-1).visits, 2);
+  assert.equal((await call(staff, 'select traffic_report(1) r')).r.days.length, 1);
+});
+
 test('running the database file again keeps staff and their jobs', async () => {
   await db.query(readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8'));
   const r = (await db.query(`select roles from staff where email='owner@allseazons.test'`)).rows[0];

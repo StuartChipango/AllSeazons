@@ -49,6 +49,9 @@ export async function show(main) {
   setTimeout(backfillThumbs, 1500);
   const since = weekStart();
   const sixty = new Date(Date.now() - 60 * 86400e3).toISOString();
+  const visitorsToday = can('owner')
+    ? supabase.rpc('traffic_report', { p_days: 1 }).then((r) => r.data?.totals ?? null, () => null)
+    : Promise.resolve(null);
   const [week, open, toPack, live, review, soldItems, slow, fresh] = await Promise.all([
     supabase.from('orders').select('total, channel').in('status', ['paid', 'packed', 'sent', 'delivered']).gte('paid_at', since),
     supabase.from('orders').select('id', { count: 'exact', head: true }).in('status', ['held', 'confirmed']),
@@ -63,6 +66,7 @@ export async function show(main) {
       .order('approved_at', { ascending: false, nullsFirst: false }).limit(12),
   ]);
 
+  const visits = await visitorsToday;
   const sales = (week.data || []).reduce((s, o) => s + o.total, 0);
   const goal = shared.settings?.weekly_goal || 0;
   const items = soldItems.data || [];
@@ -94,6 +98,7 @@ export async function show(main) {
       <div class="kpi"><div class="l">Sales this week</div><div class="n">${kwacha(sales)}</div>
         ${goal ? `<div class="progress" title="Goal ${kwacha(goal)}"><span style="width:${Math.min(100, (sales / goal) * 100)}%"></span></div><div class="l">${Math.round((sales / goal) * 100)}% of ${kwacha(goal)} goal</div>` : ''}</div>
       <a class="kpi" href="#stock"><div class="l">Toys in the shop</div><div class="n">${live.count ?? 0}</div></a>
+      ${can('owner') ? `<a class="kpi" href="#traffic"><div class="l">Website visitors today</div><div class="n">${visits ? visits.visitors : '–'}</div><div class="l">${visits ? `${visits.whatsapp} WhatsApp taps · see where from ›` : 'See where they come from ›'}</div></a>` : ''}
     </div>
     ${(fresh.data || []).length ? `<h2 style="font-size:20px;margin:4px 0 8px">Just added</h2>
     <div class="added">${fresh.data.map((t) => `<a href="${can('stock') ? '#stock' : '../#' + esc(t.code || '')}"><img src="${esc(imageUrl(t.thumb_path || t.photo_path || t.image_path))}" alt="" loading="lazy" decoding="async">${esc(t.name)}<br>${kwacha(t.price)}</a>`).join('')}</div>` : ''}

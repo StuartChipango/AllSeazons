@@ -3,6 +3,7 @@ import {
   esc, kwacha, effectivePrice, isSpecial, parcelSize, courierFee, waLink, orderMessage,
   priceBands, AUDIENCES, CONDITIONS, AGES, PAYMENTS, timeLabel,
 } from './lib.js';
+import { track } from './track.js';
 
 const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,quantity,status,image_path,photo_path,thumb_path,media,created_at,approved_at,sold_at';
 const $ = (sel) => document.querySelector(sel);
@@ -378,6 +379,7 @@ function openToy(t) {
   });
   if (location.hash !== '#' + t.code) history.replaceState(null, '', '#' + t.code);
   $('#toyDialog').showModal();
+  track('toy', { toy_code: t.code });
 }
 
 function openFromHash() {
@@ -587,6 +589,7 @@ async function placeOrder() {
   const pictures = new URL(`order.html?o=${encodeURIComponent(data.code)}&k=${encodeURIComponent(data.link_key)}`, location.href).href;
   const link = waLink(state.settings.whatsapp_number, orderMessage(data, pictures));
   state.lastOrder = { order: data, link };
+  track('order', { order_code: data.code });
   save('as_last_order', state.lastOrder);
   state.cart = [];
   save('as_cart', state.cart);
@@ -597,6 +600,12 @@ async function placeOrder() {
 }
 
 // --------------------------------------------------------------- events
+
+// Taps on any "chat on WhatsApp" link (not the order itself, counted above).
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a[href^="https://wa.me"]');
+  if (a && a.id !== 'waGo') track('whatsapp');
+}, true);
 
 document.addEventListener('click', (e) => {
   const el = e.target.closest('button, a');

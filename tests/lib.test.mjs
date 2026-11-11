@@ -137,3 +137,33 @@ test('focus boxes from a pack', () => {
   assert.equal(parseFocus('0.9,0.2,0.1,0.8'), null);
   assert.equal(parseFocus(''), null);
 });
+
+test('traffic sources: tracked links, referrers and in-app browsers', async () => {
+  const { trafficSource, trackedLink, sourceFromTag } = await import('../assets/js/lib.js');
+  const host = 'allseazons.shop';
+  const s = (o) => trafficSource({ host, ...o });
+  assert.deepEqual(s({ search: '?src=wa-status&c=Christmas Sale' }),
+    { source: 'whatsapp', via: 'wa-status', campaign: 'christmas-sale', referrer: '' });
+  assert.equal(s({ search: '?utm_source=facebook&utm_medium=post', referrer: 'https://l.facebook.com/' }).source, 'facebook');
+  assert.equal(s({ search: '?src=ig-bio' }).source, 'instagram');
+  assert.equal(s({ search: '?src=qr' }).source, 'poster');
+  assert.equal(s({ search: '?src=market-day' }).source, 'other');
+  assert.equal(s({ search: '?fbclid=abc' }).source, 'facebook');
+  assert.equal(s({ referrer: 'https://m.facebook.com/' }).source, 'facebook');
+  assert.equal(s({ referrer: 'https://lm.facebook.com/l.php' }).source, 'facebook');
+  assert.equal(s({ referrer: 'https://www.google.co.zm/' }).source, 'search');
+  assert.equal(s({ referrer: 'https://www.bing.com/search?q=toys' }).source, 'search');
+  assert.equal(s({ referrer: 'android-app://com.google.android.googlequicksearchbox/' }).source, 'search');
+  assert.equal(s({ referrer: 'android-app://com.whatsapp/' }).source, 'whatsapp');
+  assert.equal(s({ referrer: 'https://l.instagram.com/' }).source, 'instagram');
+  assert.deepEqual(s({ referrer: 'https://zambiatoys.blog/post' }), { source: 'other', via: 'zambiatoys.blog', campaign: '', referrer: 'zambiatoys.blog' });
+  // Moving between pages of the shop itself is not a new source.
+  assert.equal(s({ referrer: 'https://allseazons.shop/order.html' }).source, 'direct');
+  assert.equal(s({ ua: 'Mozilla/5.0 (Linux; Android 13) [FB_IAB/FB4A;FBAV/440.0.0.0;]' }).source, 'facebook');
+  assert.equal(s({ ua: 'Mozilla/5.0 (Linux; Android 13) Instagram 300.0.0' }).source, 'instagram');
+  assert.equal(s({ ua: 'Mozilla/5.0 (Linux; Android 13) Chrome/120' }).source, 'direct');
+  assert.equal(sourceFromTag('WA'), 'whatsapp');
+  assert.equal(sourceFromTag('fb-christmas'), 'facebook');
+  assert.equal(trackedLink('https://allseazons.shop/#ABC', 'wa-status'), 'https://allseazons.shop/?src=wa-status');
+  assert.equal(trackedLink('https://allseazons.shop/', 'fb', 'Easter Toys!'), 'https://allseazons.shop/?src=fb&c=easter-toys');
+});

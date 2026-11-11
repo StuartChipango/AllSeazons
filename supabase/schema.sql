@@ -898,6 +898,143 @@ end;
 $$;
 
 -- =====================================================================
+-- Website traffic: where shop visitors come from (Facebook, WhatsApp,
+-- Google...) and what they do next (look at a toy, tap WhatsApp, order).
+-- The shop writes rows only through track(); only the owner reads them,
+-- through traffic_report(). No names or phone numbers are kept: a visitor
+-- is a random id the phone makes up. Rows older than 400 days are removed.
+-- =====================================================================
+create table if not exists public.visits (
+  id bigserial primary key,
+  at timestamptz not null default now(),
+  kind text not null check (kind in ('visit', 'toy', 'whatsapp', 'order')),
+  visitor text not null,
+  session text not null,
+  source text not null default 'direct',
+  via text,
+  campaign text,
+  referrer text,
+  device text,
+  toy_code text,
+  order_code text,
+  amount int
+);
+create index if not exists visits_at_idx on public.visits (at);
+create index if not exists visits_session_idx on public.visits (session, at);
+
+create or replace function public._tag(p text, p_len int default 40) returns text
+language sql immutable as $$
+  select nullif(left(regexp_replace(lower(btrim(coalesce(p, ''))), '[^a-z0-9._-]+', '-', 'g'), p_len), '');
+$$;
+
+create or replace function public.track(p jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  v_kind text := p->>'kind';
+  v_session text := public._tag(p->>'session');
+  v_visitor text := public._tag(p->>'visitor');
+  v_order public.orders;
+  v_amount int;
+begin
+  if v_kind is null or v_kind not in ('visit', 'toy', 'whatsapp', 'order') or v_session is null or v_visitor is null then
+    return;
+  end if;
+  -- A busy shopper makes a few dozen rows; this stops anyone filling the table.
+  if (select count(*) from public.visits where session = v_session and at > now() - interval '1 day') >= 300 then
+    return;
+  end if;
+  if v_kind = 'order' then
+    -- The amount comes from the order itself, never from the website.
+    select * into v_order from public.orders
+      where code = upper(btrim(coalesce(p->>'order_code', ''))) and created_at > now() - interval '2 hours';
+    if not found or exists (select 1 from public.visits where kind = 'order' and order_code = v_order.code) then
+      return;
+    end if;
+    v_amount := v_order.total;
+  end if;
+  insert into public.visits (kind, visitor, session, source, via, campaign, referrer, device, toy_code, order_code, amount)
+  values (v_kind, v_visitor, v_session,
+    coalesce(public._tag(p->>'source', 20), 'direct'), public._tag(p->>'via'), public._tag(p->>'campaign', 60),
+    public._tag(p->>'referrer', 80), public._tag(p->>'device', 10),
+    case when v_kind = 'toy' then upper(left(btrim(coalesce(p->>'toy_code', '')), 20)) end,
+    v_order.code, v_amount);
+  if random() < 0.01 then
+    delete from public.visits where at < now() - interval '400 days';
+  end if;
+end;
+$$;
+
+-- Everything the Traffic page shows, for the last p_days days in Lusaka
+-- time (1 = today only).
+create or replace function public.traffic_report(p_days int default 7) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_today date := (now() at time zone 'Africa/Lusaka')::date;
+  v_first date := v_today - (greatest(1, least(coalesce(p_days, 7), 400)) - 1);
+  v_from timestamptz := v_first::timestamp at time zone 'Africa/Lusaka';
+  v_out jsonb;
+begin
+  perform public._require_role('owner');
+  with v as (
+    select * from public.visits where at >= v_from
+  ),
+  per_source as (
+    select source,
+      count(*) filter (where kind = 'visit') as visits,
+      count(distinct visitor) filter (where kind = 'visit') as visitors,
+      count(*) filter (where kind = 'toy') as toy_views,
+      count(*) filter (where kind = 'whatsapp') as whatsapp,
+      count(*) filter (where kind = 'order') as orders,
+      coalesce(sum(amount) filter (where kind = 'order'), 0) as sales
+    from v group by source
+  ),
+  per_via as (
+    select source, coalesce(via, referrer, '') as via,
+      count(*) filter (where kind = 'visit') as visits,
+      count(*) filter (where kind = 'order') as orders
+    from v where coalesce(via, referrer) is not null group by 1, 2
+  ),
+  per_campaign as (
+    select campaign,
+      count(*) filter (where kind = 'visit') as visits,
+      count(*) filter (where kind = 'order') as orders,
+      coalesce(sum(amount) filter (where kind = 'order'), 0) as sales
+    from v where campaign is not null group by 1
+  ),
+  per_day as (
+    select d::date as day,
+      (select count(*) from v where kind = 'visit' and (at at time zone 'Africa/Lusaka')::date = d::date) as visits,
+      (select count(distinct visitor) from v where kind = 'visit' and (at at time zone 'Africa/Lusaka')::date = d::date) as visitors
+    from generate_series(v_first, v_today, interval '1 day') d
+  ),
+  per_toy as (
+    select v.toy_code as code, max(t.name) as name, count(*) as views
+    from v left join public.toys t on t.code = v.toy_code
+    where v.kind = 'toy' and v.toy_code is not null group by v.toy_code
+  )
+  select jsonb_build_object(
+    'from', v_first, 'to', v_today,
+    'totals', (select jsonb_build_object(
+        'visits', count(*) filter (where kind = 'visit'),
+        'visitors', count(distinct visitor) filter (where kind = 'visit'),
+        'toy_views', count(*) filter (where kind = 'toy'),
+        'whatsapp', count(*) filter (where kind = 'whatsapp'),
+        'orders', count(*) filter (where kind = 'order'),
+        'sales', coalesce(sum(amount) filter (where kind = 'order'), 0),
+        'phones', count(distinct visitor) filter (where kind = 'visit' and device = 'phone'),
+        'computers', count(distinct visitor) filter (where kind = 'visit' and device = 'computer'))
+      from v),
+    'sources', coalesce((select jsonb_agg(to_jsonb(s) order by s.visits desc, s.orders desc) from per_source s), '[]'),
+    'vias', coalesce((select jsonb_agg(to_jsonb(x) order by x.visits desc) from (select * from per_via order by visits desc, orders desc limit 20) x), '[]'),
+    'campaigns', coalesce((select jsonb_agg(to_jsonb(x) order by x.visits desc) from (select * from per_campaign order by visits desc limit 20) x), '[]'),
+    'days', coalesce((select jsonb_agg(to_jsonb(x) order by x.day) from per_day x), '[]'),
+    'toys', coalesce((select jsonb_agg(to_jsonb(x) order by x.views desc) from (select * from per_toy order by views desc limit 10) x), '[]')
+  ) into v_out;
+  return v_out;
+end;
+$$;
+
+-- =====================================================================
 -- Security rules (row level security).
 -- The public can read the shop: toys on sale, on hold or sold, plus
 -- settings, towns, price tiers and categories. Everything else is staff
@@ -914,6 +1051,7 @@ alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
 
 alter table public.activity enable row level security;
+alter table public.visits enable row level security;
 
 -- Everyone on staff sees who is on the team; changes go through the
 -- staff_* functions (owner only).
@@ -923,6 +1061,8 @@ create policy "staff see staff" on public.staff for select to authenticated usin
 
 drop policy if exists "owner reads activity" on public.activity;
 create policy "owner reads activity" on public.activity for select to authenticated using (public.has_role('owner'));
+drop policy if exists "owner reads visits" on public.visits;
+create policy "owner reads visits" on public.visits for select to authenticated using (public.has_role('owner'));
 
 drop policy if exists "anyone reads settings" on public.settings;
 create policy "anyone reads settings" on public.settings for select to anon, authenticated using (true);
@@ -1004,6 +1144,9 @@ grant execute on function public.get_order_public(text, text) to anon, authentic
 grant execute on function public.release_expired_holds() to anon, authenticated;
 grant execute on function public.is_staff() to anon, authenticated;
 grant execute on function public.parcel_size(int) to anon, authenticated;
+revoke execute on function public.traffic_report(int) from public, anon;
+grant execute on function public.traffic_report(int) to authenticated;
+grant execute on function public.track(jsonb) to anon, authenticated;
 
 -- =====================================================================
 -- Photo storage: "toys" holds the plain website photos and the framed

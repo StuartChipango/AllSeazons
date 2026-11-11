@@ -491,6 +491,55 @@ test('on a phone: bottom tabs, the + sheet, a shop sale and a WhatsApp order', a
   await ctx.close();
 });
 
+test('the owner sees where website visitors come from', async () => {
+  // A customer taps a tracked link on WhatsApp status, looks at a toy and taps WhatsApp.
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const visitor = watch(await ctx.newPage());
+  await visitor.route('https://wa.me/**', (route) => route.fulfill({ body: 'WhatsApp' }));
+  await visitor.goto(`${h.url}/?src=wa-status&c=christmas`);
+  await visitor.locator('.card').first().waitFor();
+  assert.equal(new URL(visitor.url()).search, '', 'the tag is tidied out of the address');
+  await visitor.locator('.card .pic').first().click();
+  await visitor.locator('#toyDialog[open]').waitFor();
+  await visitor.keyboard.press('Escape');
+  const popup = ctx.waitForEvent('page');
+  await visitor.click('#topWa');
+  await (await popup).close();
+  await visitor.waitForTimeout(300);
+  await ctx.close();
+
+  await staff.goto(`${h.url}/staff/#home`);
+  await staff.locator('a.kpi[href="#traffic"]').click();
+  await staff.getByRole('heading', { name: 'Website visitors' }).waitFor();
+  const wa = staff.locator('.src-row', { has: staff.locator('b', { hasText: /^WhatsApp$/ }) });
+  await wa.waitFor();
+  assert.match(await wa.textContent(), /1 visitor/);
+  assert.match(await wa.textContent(), /1 toy look/);
+  assert.match(await wa.textContent(), /1 WhatsApp tap/);
+  await staff.locator('.mini-table', { hasText: 'WhatsApp status' }).waitFor();
+  await staff.locator('.mini-table', { hasText: 'christmas' }).waitFor();
+  await staff.selectOption('#lmChannel', 'fb');
+  await staff.fill('#lmCampaign', 'Easter Toys');
+  assert.equal(await staff.locator('#lmOut').textContent(), `${h.url}/?src=fb&c=easter-toys`);
+  await shot(staff, '40-traffic');
+
+  const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const phone = watch(await ctx2.newPage());
+  await phone.goto(`${h.url}/staff/`);
+  await phone.fill('input[name=email]', h.staff.email);
+  await phone.fill('input[name=password]', h.staff.password);
+  await phone.click('#loginForm button[type=submit]');
+  await phone.goto(`${h.url}/staff/#traffic`);
+  await phone.getByRole('heading', { name: 'Where visitors come from' }).waitFor();
+  await shot(phone, '41-phone-traffic');
+  await phone.locator('#linkMaker').scrollIntoViewIfNeeded();
+  await shot(phone, '42-phone-link-maker');
+  assert.equal(await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'no sideways scrolling');
+  // Staff phones are not counted as visitors.
+  assert.equal(await phone.evaluate(() => localStorage.getItem('as_staff_device')), 'true');
+  await ctx2.close();
+});
+
 test('no browser errors along the way', () => {
   assert.deepEqual(errors, []);
 });

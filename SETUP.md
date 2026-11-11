@@ -65,6 +65,15 @@ Sign in at the staff app and open **Settings**:
 
 In the old Google Sheet, **File → Download → CSV** for the Toys tab. In the staff app open **Stock → Import CSV**. Available toys arrive on the Review page; add a photo to each and approve.
 
+## 6. See where website visitors come from
+
+Free, built in, no extra account. After running the latest `schema-paste.sql`, the shop counts each visit and where it came from: Facebook, WhatsApp, Instagram, TikTok, Google and other searches, posters and QR codes, other websites, or "Direct or unknown". It also counts what visitors did next: looked at a toy, tapped WhatsApp, placed an order (with the order's real total).
+
+- Open it from the **Website visitors today** tile on Home (owner only).
+- **Use tracked links.** WhatsApp chats and status hide where a visitor came from, so they show as "Direct". On the Website visitors page, **Make a tracked link** gives links like `https://allseazons.shop/?src=wa-status` (WhatsApp status), `?src=fb` (Facebook posts), `?src=ig-bio` (Instagram bio), `?src=qr` (posters and the QR code at the shop). Add a promotion name to compare offers: `?src=fb&c=christmas`.
+- Phones that sign in to the staff app are not counted, so your own checking does not show up. Change this under "What do these mean?" on that page.
+- No names or numbers are stored. Rows older than 400 days are removed automatically.
+
 ## Daily use
 
 1. Take photos on your phone.
