@@ -22,50 +22,55 @@
     <label class="search">
       <span class="sr-only">Search toys</span>
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
-      <input type="search" id="search" placeholder="Search teddy, car, blocks…" autocomplete="off">
+      <input type="search" id="search" placeholder="Type a toy: teddy, car…" autocomplete="off">
     </label>
-    <a class="wa-btn" id="topWa" href="#" target="_blank" rel="noopener" aria-label="Chat with us on WhatsApp">
-      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-11.7 7.1L4 20l1-4A8 8 0 1 1 20 12z"/></svg>
+    <a class="wa-btn" id="topWa" href="#" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm5.4 14.2c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2.1 1-2.4c.3-.3.6-.3.8-.3h.6c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.4 0 .5l-.3.5-.4.5c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1c.2-.3.4-.2.6-.1l2 1c.3.1.5.2.5.3.1.2.1.7-.1 1.3Z"/></svg>
+      <span>Help</span>
     </a>
   </header>
 
   <main class="wrap">
+    <!-- How buying works, in three steps. Open on the first visit, one line after. -->
+    <details class="how" id="how">
+      <summary>How to buy</summary>
+      <ol>
+        <li><b>1</b>Tap <u>Buy</u> on the toys you like</li>
+        <li><b>2</b>Send your order on WhatsApp</li>
+        <li><b>3</b>Pay after we confirm</li>
+      </ol>
+    </details>
+
+    <!-- Big picture buttons: everything is on screen, nothing to swipe. -->
+    <section class="choose" id="choose" aria-label="Find a toy">
+      <h2 class="ask">Who is the toy for?</h2>
+      <div class="who" id="who"></div>
+      <h2 class="ask">What kind of toy?</h2>
+      <div class="types" id="cats"></div>
+      <details class="more-choices" id="moreChoices">
+        <summary><span>More choices</span> <small>age, price, new</small><span class="badge" id="filterCount" hidden></span></summary>
+        <div class="pick-group"><h3>Age</h3><div class="taps" data-pick="age"></div></div>
+        <div class="pick-group"><h3>My budget</h3><div class="taps" data-pick="band"></div></div>
+        <div class="pick-group"><h3>Used or new</h3><div class="taps" data-pick="condition"></div></div>
+        <div class="pick-group"><h3>Show first</h3><div class="taps" data-pick="sort"></div></div>
+      </details>
+    </section>
+
     <!-- The toy or toys of the week: staff tick "Put in the big banner". -->
     <section class="hero" id="hero" aria-label="This week's special">
       <div class="hero-plain">
         <h1>Quality toys from K30</h1>
-        <p>Tap <b>Buy</b> on the toys you like, then send your order on WhatsApp. Delivery to every town.</p>
+        <p>Delivery to every town in Zambia.</p>
         <img class="mascot" src="assets/img/mascots/sammy.webp" alt="" width="98" height="120" decoding="async" fetchpriority="low">
       </div>
     </section>
-
-    <!-- One line: a Filters button, then the toy types to swipe through. -->
-    <div class="filter-line">
-      <button type="button" class="filter-btn" id="filterBtn" aria-expanded="false" aria-controls="filterPanel">
-        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 7h16M7 12h10M10 17h4"/></svg>
-        Filters<span class="badge" id="filterCount" hidden></span>
-      </button>
-      <div class="cats" id="cats" aria-label="Toy types"></div>
-    </div>
-    <div class="filter-panel" id="filterPanel" hidden>
-      <label class="pick"><span>Boys or girls</span><select data-filter="audience" id="fAudience"></select></label>
-      <label class="pick"><span>Age</span><select data-filter="age" id="fAge"></select></label>
-      <label class="pick"><span>Price</span><select data-filter="band" id="fBand"></select></label>
-      <label class="pick"><span>Used or new</span><select data-filter="condition" id="fCondition"></select></label>
-      <label class="pick"><span>Sort</span><select data-filter="sort" id="sort">
-        <option value="new">Newest first</option>
-        <option value="low">Price: low to high</option>
-        <option value="high">Price: high to low</option>
-      </select></label>
-      <button type="button" class="btn ghost small" id="clearFilters">Clear all</button>
-    </div>
 
     <p class="status" id="status">Loading toys…</p>
     <div id="sections" aria-live="polite"></div>
   </main>
 
-  <button class="cart-bar" id="cartBtn" hidden aria-label="Open my list and check out">
-    <span><span id="cartCount">0</span> <span id="cartWord">toys</span> picked</span>
+  <button class="cart-bar" id="cartBtn" hidden aria-label="Open my order and finish it">
+    <span class="cart-words"><span><span id="cartCount">0</span> <span id="cartWord">toys</span> in my order</span><small>Tap here to finish</small></span>
     <span class="cart-total" id="cartTotal"></span>
   </button>
 
