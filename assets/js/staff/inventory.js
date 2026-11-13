@@ -2,7 +2,7 @@ import { esc, kwacha, AGES, AUDIENCES, CONDITIONS, effectivePrice, parseCsv, toC
 import { supabase, imageUrl, friendlyError } from '../db.js';
 import { shared, refreshBadges } from './app.js';
 import { $, $$, toast, openPanel, closePanel, confirmBox, seg, download, busy, dateLabel } from './ui.js';
-import { reframe, replacePhoto, deleteToyFiles } from './photos.js';
+import { reframe, replacePhoto, deleteToyFiles, flipToy } from './photos.js';
 import { makeZip } from '../unzip.js';
 import { mediaHtml, wireMedia } from './media.js';
 
@@ -189,6 +189,7 @@ function edit(t) {
     <div class="field"><span>More photos and video for the shop page</span><div id="mediaBox">${mediaHtml(t)}</div></div>
     <div class="row-actions" style="justify-content:flex-start;margin-bottom:12px">
       <label class="btn ghost small">Replace photo<input type="file" accept="image/*" id="newPhoto" hidden></label>
+      ${t.image_path ? '<button type="button" class="btn ghost small" id="flipPhoto" title="For photos where writing reads backwards">⇋ Flip photo</button>' : ''}
       ${t.status === 'available' ? '<button class="btn ghost small" id="sellOne">Sell in shop</button>' : ''}
     </div>
     <form id="editForm">
@@ -287,6 +288,20 @@ function edit(t) {
       toast(friendlyError(err), true);
     }
   };
+
+  $('#flipPhoto', body)?.addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    busy(b, true, 'Flipping…');
+    try {
+      Object.assign(t, await flipToy(t));
+      $('.preview', body).src = imageUrl(t.image_path);
+      toast('Photo flipped');
+      load();
+    } catch (err) {
+      toast(friendlyError(err), true);
+    }
+    busy(b, false);
+  });
 
   $('#sellOne', body)?.addEventListener('click', () => sellPanel([t]));
 
