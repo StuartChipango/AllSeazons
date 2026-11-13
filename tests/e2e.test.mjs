@@ -105,28 +105,33 @@ test('approve all puts the toys in the shop', async () => {
   await shopper.keyboard.press('Escape');
   assert.equal(await shopper.locator('.card .cond').first().textContent(), 'Used');
   await shot(shopper, '03-shop');
-  // Filters sit on one line; the extra ones open from the Filters button.
-  await shopper.click('#filterBtn');
-  await shopper.selectOption('#fAudience', 'boys');
-  await shopper.waitForFunction(() => document.querySelectorAll('.card').length === 1);
+  // Big tap buttons, no dropdowns. "A girl" shows toys for girls plus
+  // toys for boys and girls; "Show all toys" undoes every choice.
+  await shopper.getByRole('button', { name: 'A girl' }).click();
+  await shopper.locator('.sec-head', { hasText: 'Toys for a girl' }).waitFor();
+  assert.equal(await shopper.locator('.card', { hasText: 'Big Brown Teddy' }).count(), 1);
+  await shopper.locator('#moreChoices summary').click();
+  await shopper.getByRole('button', { name: 'Up to K50' }).click();
+  await shopper.waitForFunction(() => document.querySelectorAll('.card').length === 0);
   assert.equal(await shopper.locator('#filterCount').textContent(), '1');
-  await shopper.click('#clearFilters');
+  await shopper.getByRole('link', { name: 'Ask us on WhatsApp' }).waitFor();
+  await shopper.locator('.sec-btn[data-clear]').click();
   await shopper.waitForFunction(() => document.querySelectorAll('.card').length === 3);
-  await shopper.click('#filterBtn');
+  await shopper.locator('#moreChoices summary').click();
 });
 
 let waUrl = '';
 test('checkout sends a labelled order to WhatsApp and holds the toys', async () => {
   await shopper.route('https://wa.me/**', (route) => { waUrl = route.request().url(); route.fulfill({ body: 'WhatsApp' }); });
-  await shopper.locator('.card', { hasText: 'Big Brown Teddy' }).getByRole('button', { name: 'Add to cart' }).click();
-  await shopper.locator('.card', { hasText: 'Red Race Car' }).getByRole('button', { name: 'Add to cart' }).click();
+  await shopper.locator('.card', { hasText: 'Big Brown Teddy' }).getByRole('button', { name: 'Buy' }).click();
+  await shopper.locator('.card', { hasText: 'Red Race Car' }).getByRole('button', { name: 'Buy' }).click();
   assert.equal(await shopper.locator('#cartCount').textContent(), '2');
   await shopper.click('#cartBtn');
   await shopper.fill('#checkout [name=name]', 'Mwila Phiri');
   await shopper.fill('#checkout [name=phone]', '0966 000 111');
   // Yango needs an address.
   await shopper.getByRole('button', { name: /Lusaka delivery/ }).click();
-  await shopper.getByRole('button', { name: 'Send order on WhatsApp' }).click();
+  await shopper.getByRole('button', { name: 'Send my order on WhatsApp' }).click();
   await shopper.getByText('Please enter your delivery address.').waitFor();
   await shopper.getByRole('button', { name: /Out of town/ }).click();
   await shopper.selectOption('#checkout [name=town_id]', { label: 'Kitwe' });
@@ -134,7 +139,7 @@ test('checkout sends a labelled order to WhatsApp and holds the toys', async () 
   await shopper.getByText('Add a note or collection point').click();
   await shopper.fill('#checkout [name=address]', 'Collect at Mazhandu Kitwe');
   await shot(shopper, '04-checkout');
-  await shopper.getByRole('button', { name: 'Send order on WhatsApp' }).click();
+  await shopper.getByRole('button', { name: 'Send my order on WhatsApp' }).click();
   await shopper.getByText('Almost done!').waitFor();
   await shot(shopper, '05-done');
   await shopper.waitForURL('https://wa.me/**', { timeout: 5000 });
@@ -449,7 +454,7 @@ test('the shop shows toys in sideways lines with a big banner, and old toys get 
   assert.equal(await shopper.locator('#hero .slide').count(), 2);
   assert.match(await shopper.locator('#hero .slide').first().innerText(), /HOT THIS WEEK[\s\S]*Old Toy [34][\s\S]*K30[\s\S]*Save 40%/i);
   await shot(shopper, '40-shop-home');
-  await shopper.locator('#hero .slide').first().getByRole('button', { name: 'Add to cart' }).click();
+  await shopper.locator('#hero .slide').first().getByRole('button', { name: 'Buy' }).click();
   assert.equal(await shopper.locator('#cartCount').textContent(), '1');
   assert.equal(await shopper.locator('#hero .slide').first().getByRole('button', { name: 'In cart' }).count(), 1);
   await shopper.evaluate(() => localStorage.removeItem('as_cart'));
