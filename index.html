@@ -30,41 +30,38 @@
   </header>
 
   <main class="wrap">
-    <section class="hero">
-      <h1>Quality toys from K30</h1>
-      <p>Tap <b>+</b> on the toys you like, then send your order on WhatsApp. Delivery to every town.</p>
-      <img class="mascot" src="assets/img/mascots/sammy.webp" alt="" width="98" height="120" decoding="async" fetchpriority="low">
+    <!-- The toy or toys of the week: staff tick "Put in the big banner". -->
+    <section class="hero" id="hero" aria-label="This week's special">
+      <div class="hero-plain">
+        <h1>Quality toys from K30</h1>
+        <p>Tap <b>Buy</b> on the toys you like, then send your order on WhatsApp. Delivery to every town.</p>
+        <img class="mascot" src="assets/img/mascots/sammy.webp" alt="" width="98" height="120" decoding="async" fetchpriority="low">
+      </div>
     </section>
 
-    <div class="filters" id="filters">
-      <div class="chips" id="audienceChips" aria-label="Who is it for"></div>
-      <div class="chips" id="ageChips" aria-label="Age"></div>
-      <div class="likes" id="likes" aria-label="What they like"></div>
+    <!-- One line: a Filters button, then the toy types to swipe through. -->
+    <div class="filter-line">
+      <button type="button" class="filter-btn" id="filterBtn" aria-expanded="false" aria-controls="filterPanel">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 7h16M7 12h10M10 17h4"/></svg>
+        Filters<span class="badge" id="filterCount" hidden></span>
+      </button>
+      <div class="cats" id="cats" aria-label="Toy types"></div>
+    </div>
+    <div class="filter-panel" id="filterPanel" hidden>
+      <label class="pick"><span>Boys or girls</span><select data-filter="audience" id="fAudience"></select></label>
+      <label class="pick"><span>Age</span><select data-filter="age" id="fAge"></select></label>
+      <label class="pick"><span>Price</span><select data-filter="band" id="fBand"></select></label>
+      <label class="pick"><span>Used or new</span><select data-filter="condition" id="fCondition"></select></label>
+      <label class="pick"><span>Sort</span><select data-filter="sort" id="sort">
+        <option value="new">Newest first</option>
+        <option value="low">Price: low to high</option>
+        <option value="high">Price: high to low</option>
+      </select></label>
+      <button type="button" class="btn ghost small" id="clearFilters">Clear all</button>
     </div>
 
-    <div class="bar-row">
-      <nav class="tabs" role="tablist" aria-label="Shop sections">
-        <button role="tab" class="tab" data-view="shop" aria-selected="true">In stock <span id="countShop"></span></button>
-        <button role="tab" class="tab" data-view="specials" aria-selected="false">Specials <span id="countSpecials"></span></button>
-        <button role="tab" class="tab" data-view="sold" aria-selected="false">Sold <span id="countSold"></span></button>
-      </nav>
-      <details class="more-filters" id="moreFilters">
-        <summary>Filters</summary>
-        <div class="more-body">
-          <div class="chips" id="conditionChips" aria-label="Condition"></div>
-          <div class="chips" id="priceChips" aria-label="Price"></div>
-          <select id="sort" aria-label="Sort">
-            <option value="new">Newest first</option>
-            <option value="low">Price: low to high</option>
-            <option value="high">Price: high to low</option>
-          </select>
-        </div>
-      </details>
-    </div>
-
-    <p class="sold-intro" id="soldIntro" hidden></p>
     <p class="status" id="status">Loading toys…</p>
-    <div class="grid" id="grid" aria-live="polite"></div>
+    <div id="sections" aria-live="polite"></div>
   </main>
 
   <button class="cart-bar" id="cartBtn" hidden aria-label="Open my list and check out">

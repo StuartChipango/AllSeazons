@@ -145,7 +145,8 @@ function render(towns, staff, activity) {
           <label class="field"><span>Packaging fee (K)</span><input type="number" name="packaging_fee" min="0" value="${s.packaging_fee ?? 40}"><small>Added to every courier fee: packaging and the rider to the courier office.</small></label>
           <label class="field"><span>Weekly sales goal (K)</span><input type="number" name="weekly_goal" min="0" value="${s.weekly_goal}"></label>
         </div>
-        <label class="field"><span>Banner at the top of the shop (optional)</span><input type="text" name="announcement" value="${esc(s.announcement || '')}" placeholder="New toys every Friday!"></label>
+        ${'hero_title' in s ? `<label class="field"><span>Headline on the big toy banner (optional)</span><input type="text" name="hero_title" maxlength="30" value="${esc(s.hero_title || '')}" placeholder="Hot this week"><small>Pick the toys for the banner in Stock: open a toy and tick "Put in the big banner".</small></label>` : ''}
+        <label class="field"><span>Message strip above the shop (optional)</span><input type="text" name="announcement" value="${esc(s.announcement || '')}" placeholder="New toys every Friday!"></label>
         <label class="field"><span>Pickup note (Lusaka)</span><input type="text" name="pickup_note" value="${esc(s.pickup_note)}"></label>
         <label class="field"><span>Yango note</span><input type="text" name="yango_note" value="${esc(s.yango_note)}"></label>
         <label class="field"><span>Courier note (out of town)</span><input type="text" name="courier_note" value="${esc(s.courier_note)}"></label>
@@ -198,6 +199,7 @@ function wire() {
       whatsapp_number: f.whatsapp_number.trim(), hold_minutes: parseInt(f.hold_minutes, 10),
       medium_from: parseInt(f.medium_from, 10), large_from: parseInt(f.large_from, 10),
       weekly_goal: parseInt(f.weekly_goal, 10) || 0, packaging_fee: Math.max(0, parseInt(f.packaging_fee, 10) || 0), announcement: f.announcement.trim() || null,
+      ...('hero_title' in f ? { hero_title: f.hero_title.trim() || null } : {}),
       pickup_note: f.pickup_note.trim(), yango_note: f.yango_note.trim(), courier_note: f.courier_note.trim(),
       updated_at: new Date().toISOString(),
     };

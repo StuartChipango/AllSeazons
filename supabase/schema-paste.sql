@@ -53,6 +53,7 @@ updated_at timestamptz not null default now()
 );
 insert into public.settings (id) values (1) on conflict (id) do nothing;
 alter table public.settings add column if not exists packaging_fee int not null default 40 check (packaging_fee >= 0);
+alter table public.settings add column if not exists hero_title text;
 create table if not exists public.price_tiers (
 price int primary key check (price > 0)
 );
@@ -131,6 +132,7 @@ alter table public.toys add column if not exists has_cutout boolean not null def
 alter table public.toys add column if not exists photo_path text;
 alter table public.toys add column if not exists media jsonb not null default '[]'::jsonb;
 alter table public.toys add column if not exists thumb_path text;
+alter table public.toys add column if not exists is_featured boolean not null default false;
 create sequence if not exists public.order_code_seq start 1001;
 create table if not exists public.orders (
 id uuid primary key default gen_random_uuid(),

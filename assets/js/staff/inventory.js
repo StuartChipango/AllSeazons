@@ -93,6 +93,8 @@ function render() {
         <button class="btn small" data-bulk="sell">Sell in shop</button>
         <button class="btn small" data-bulk="special">Make special</button>
         <button class="btn small" data-bulk="unspecial">Remove special</button>
+        <button class="btn small" data-bulk="feature">Put in big banner</button>
+        <button class="btn small" data-bulk="unfeature">Take out of banner</button>
         <button class="btn small" data-bulk="show">Show in shop</button>
         <button class="btn small" data-bulk="hide">Hide</button>
         <button class="btn small" data-bulk="social">Social media pack</button>
@@ -134,6 +136,8 @@ async function bulk(action, button) {
     if (v === null) return;
     changes = { is_special: true, sale_price: v.trim() ? parseInt(v, 10) : null };
   } else if (action === 'unspecial') changes = { is_special: false, sale_price: null };
+  else if (action === 'feature') changes = { is_featured: true };
+  else if (action === 'unfeature') changes = { is_featured: false };
   else if (action === 'hide') changes = { status: 'hidden' };
   else if (action === 'show') changes = { status: 'available' };
   let q = supabase.from('toys').update(changes).in('id', ids);
@@ -209,6 +213,7 @@ function edit(t) {
         <label class="field"><span>Box</span><select name="box_id"><option value="">No box</option>${shared.boxes.map((b) => `<option ${b.id === t.box_id ? 'selected' : ''}>${esc(b.id)}</option>`).join('')}</select></label>
       </div>
       <label class="field"><input type="checkbox" name="is_special" ${t.is_special ? 'checked' : ''} style="width:auto;min-height:0"> Show in Specials</label>
+      ${'is_featured' in t ? `<label class="field"><input type="checkbox" name="is_featured" ${t.is_featured ? 'checked' : ''} style="width:auto;min-height:0"> Put in the big banner at the top of the shop (toy of the week)</label>` : ''}
       <label class="field"><span>Description for customers</span><textarea name="description">${esc(t.description || '')}</textarea></label>
       ${!editable ? `<p class="notice">This toy is ${t.status === 'sold' ? 'sold' : 'on hold for an order'}. Change its order on the Orders page to put it back on sale.</p>` : ''}
       <p class="mt" style="color:var(--muted);font-size:13px">Code ${esc(t.code)}${t.legacy_id ? ` · old ID ${esc(t.legacy_id)}` : ''} · added ${dateLabel(t.created_at)}${t.sold_count ? ` · sold ${t.sold_count}` : ''}</p>
@@ -248,6 +253,7 @@ function edit(t) {
       brand: String(f.get('brand') || '').trim() || null,
       box_id: f.get('box_id') || null,
       is_special: f.get('is_special') === 'on',
+      ...('is_featured' in t ? { is_featured: f.get('is_featured') === 'on' } : {}),
       description: String(f.get('description') || '').trim() || null,
     };
     if (editable) {

@@ -105,9 +105,14 @@ test('approve all puts the toys in the shop', async () => {
   await shopper.keyboard.press('Escape');
   assert.equal(await shopper.locator('.card .cond').first().textContent(), 'Used');
   await shot(shopper, '03-shop');
-  await shopper.getByRole('button', { name: 'Boys' }).click();
-  assert.equal(await shopper.locator('.card').count(), 1);
-  await shopper.getByRole('button', { name: 'Everyone' }).click();
+  // Filters sit on one line; the extra ones open from the Filters button.
+  await shopper.click('#filterBtn');
+  await shopper.selectOption('#fAudience', 'boys');
+  await shopper.waitForFunction(() => document.querySelectorAll('.card').length === 1);
+  assert.equal(await shopper.locator('#filterCount').textContent(), '1');
+  await shopper.click('#clearFilters');
+  await shopper.waitForFunction(() => document.querySelectorAll('.card').length === 3);
+  await shopper.click('#filterBtn');
 });
 
 let waUrl = '';
@@ -179,7 +184,9 @@ test('staff mark the order paid and print the sticker', async () => {
   await sticker.close();
 
   await shopper.reload();
-  await shopper.getByRole('tab', { name: /Sold/ }).click();
+  // Sold toys load when you scroll down to them.
+  await shopper.locator('#soldSec').waitFor();
+  await shopper.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await shopper.locator('.card.is-sold').first().waitFor();
   assert.equal(await shopper.locator('.card.is-sold').count(), 2);
   await shot(shopper, '09-sold');
@@ -401,7 +408,7 @@ test('the owner adds a Sales person who signs in with a short name and sees only
   await ctx2.close();
 });
 
-test('the shop draws toys a screenful at a time and old toys get small pictures', async () => {
+test('the shop shows toys in sideways lines with a big banner, and old toys get small pictures', async () => {
   const pg = new (require('pg').Client)({ connectionString: h.dbUrl });
   await pg.connect();
   // An older toy with only a full photo: the staff app makes its small copy.
@@ -412,12 +419,41 @@ test('the shop draws toys a screenful at a time and old toys get small pictures'
   await shopper.locator('.card').first().waitFor();
   const total = (await pg.query("select count(*)::int n from toys where status in ('available','reserved')")).rows[0].n;
   assert.ok(total > 40);
-  assert.equal(await shopper.locator('.card').count(), 24, 'first screenful only');
-  for (let i = 0; i < 6 && (await shopper.locator('.card').count()) < total; i++) {
-    await shopper.locator('#more').scrollIntoViewIfNeeded();
-    await shopper.waitForTimeout(300);
-  }
-  assert.equal(await shopper.locator('.card').count(), total, 'scrolling shows the rest');
+  // Toys come in lines you swipe sideways, one line per toy type.
+  const line = shopper.locator('.sec', { hasText: 'Old Toy' });
+  assert.equal(await line.locator('.row .card').count(), 12, 'one line shows the first few');
+  await line.locator('.see-all').click();
+  assert.equal(await line.locator('.grid .card').count(), 24, 'See all opens a grid, a screenful at a time');
+  const inLine = await line.locator('h2 small').textContent();
+  for (let i = 0; i < 6 && await line.locator('.show-more').count(); i++) await line.locator('.show-more').click();
+  assert.equal(await line.locator('.grid .card').count(), Number(inLine), 'Show more shows the rest');
+  await line.getByRole('button', { name: 'Show less' }).click();
+  assert.equal(await line.locator('.row .card').count(), 12, 'Show less folds it back to one line');
+  assert.equal(await shopper.locator('.sec .card').count() >= Math.min(total, 12), true);
+
+  // A toy type chip shows only that type.
+  await pg.query("update toys set category = 'Cars & Vehicles' where name in ('Old Toy 1', 'Old Toy 2')");
+  await shopper.reload();
+  await shopper.locator('#cats').getByRole('button', { name: /Cars & Vehicles/ }).click();
+  await shopper.locator('.sec[data-sec=cat]').waitFor();
+  assert.equal(await shopper.locator('#sections .sec:not([data-sec=sold])').count(), 1);
+  const cars = (await pg.query("select count(*)::int n from toys where category = 'Cars & Vehicles' and status in ('available','reserved')")).rows[0].n;
+  assert.equal(await shopper.locator('.sec[data-sec=cat] .card').count(), cars);
+  await shopper.locator('#cats').getByRole('button', { name: 'All toys' }).click();
+
+  // The big banner shows the toys staff put in it, with their own Buy button.
+  assert.equal(await shopper.locator('#hero .slide').count(), 0);
+  await pg.query("update toys set is_featured = true, sale_price = 30 where name in ('Old Toy 3', 'Old Toy 4')");
+  await shopper.reload();
+  await shopper.locator('#hero .slide').first().waitFor();
+  assert.equal(await shopper.locator('#hero .slide').count(), 2);
+  assert.match(await shopper.locator('#hero .slide').first().innerText(), /HOT THIS WEEK[\s\S]*Old Toy [34][\s\S]*K30[\s\S]*Save 40%/i);
+  await shot(shopper, '40-shop-home');
+  await shopper.locator('#hero .slide').first().getByRole('button', { name: 'Add to cart' }).click();
+  assert.equal(await shopper.locator('#cartCount').textContent(), '1');
+  assert.equal(await shopper.locator('#hero .slide').first().getByRole('button', { name: 'In cart' }).count(), 1);
+  await shopper.evaluate(() => localStorage.removeItem('as_cart'));
+  await pg.query("update toys set is_featured = false, sale_price = null, category = null where name like 'Old Toy %'");
 
   await staff.goto(`${h.url}/staff/#home`);
   await staff.waitForFunction(() => true);

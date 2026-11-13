@@ -82,6 +82,8 @@ create table if not exists public.settings (
 insert into public.settings (id) values (1) on conflict (id) do nothing;
 -- Added to every courier fee: packaging, and a rider to the courier office.
 alter table public.settings add column if not exists packaging_fee int not null default 40 check (packaging_fee >= 0);
+-- Big banner at the top of the shop: its headline (the toys in it are toys.is_featured).
+alter table public.settings add column if not exists hero_title text;
 
 create table if not exists public.price_tiers (
   price int primary key check (price > 0)
@@ -188,6 +190,8 @@ alter table public.toys add column if not exists media jsonb not null default '[
 -- A small copy of the plain photo (480 px) for the shop's toy cards, so
 -- phones load a few KB per toy instead of the full photo.
 alter table public.toys add column if not exists thumb_path text;
+-- In the big banner at the top of the shop (the toy or toys of the week).
+alter table public.toys add column if not exists is_featured boolean not null default false;
 
 -- ---------------------------------------------------------------------
 -- Orders.

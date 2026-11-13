@@ -5,7 +5,7 @@ import {
 } from './lib.js';
 import { track } from './track.js';
 
-const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,quantity,status,image_path,photo_path,thumb_path,media,created_at,approved_at,sold_at';
+const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,is_featured,quantity,status,image_path,photo_path,thumb_path,media,created_at,approved_at,sold_at';
 const $ = (sel) => document.querySelector(sel);
 
 const state = {
@@ -14,7 +14,6 @@ const state = {
   settings: { whatsapp_number: '', hold_minutes: 120, medium_from: 2, large_from: 5 },
   towns: [],
   bands: [],
-  view: 'shop',
   filter: { audience: '', condition: '', band: -1, category: '', age: '', q: '', sort: 'new' },
   cart: load('as_cart', []),
   customer: load('as_customer', { location: 'lusaka', delivery_method: 'pickup', payment: 'mtn' }),
@@ -69,7 +68,7 @@ async function loadAll() {
 
 // Columns the database may not have yet (until the latest schema is run):
 // the shop then loads without them instead of showing an error.
-const NEWER_COLUMNS = ['media', 'thumb_path'];
+const NEWER_COLUMNS = ['media', 'thumb_path', 'is_featured'];
 let columnsInUse = TOY_COLUMNS;
 
 // The Sold section is only fetched when someone opens it.
@@ -132,49 +131,48 @@ function subscribeLive() {
 
 // ------------------------------------------------------------- filters
 
-function chipGroup(el, key, options) {
-  el.innerHTML = options.map((o) => `
-    <button class="chip" type="button" data-key="${key}" data-value="${esc(o.value)}" aria-pressed="${String(state.filter[key]) === String(o.value)}">
-      ${o.dot ? `<span class="dot" style="background:${o.dot}"></span>` : ''}${esc(o.label)}
-    </button>`).join('');
-}
-
-// A picture for each "what they like" circle, matched on the type's name.
+// A picture for each toy type, matched on the type's name.
 const LIKE_ICONS = [
   [/animal|pet|dino/i, '🦁'], [/vehicle|car|truck|train/i, '🚗'], [/dress/i, '👗'], [/doll/i, '🪆'],
   [/build|block|lego|construct/i, '🧱'], [/learn|educat|book|letter/i, '🔤'], [/plush|soft|teddy/i, '🧸'],
   [/puzzle/i, '🧩'], [/ball|sport|outdoor/i, '⚽'], [/music|sound/i, '🎵'], [/baby|infant/i, '🍼'],
-  [/game|board/i, '🎲'], [/kitchen|food|pretend/i, '🍳'], [/art|craft|draw/i, '🎨'],
+  [/game|board/i, '🎲'], [/kitchen|food|pretend/i, '🍳'], [/art|craft|draw/i, '🎨'], [/action|figure|hero/i, '🦸'],
 ];
-const likeIcon = (name) => (LIKE_ICONS.find(([re]) => re.test(name)) || [null, '🎁'])[1];
+const likeIcon = (name) => (LIKE_ICONS.find(([re]) => re.test(name || '')) || [null, '🎁'])[1];
+
+const options = (list, value) => list.map((o) => `<option value="${esc(o.value)}" ${String(o.value) === String(value) ? 'selected' : ''}>${esc(o.label)}</option>`).join('');
 
 function setupFilters(categories) {
-  chipGroup($('#audienceChips'), 'audience', [
-    { value: '', label: 'Everyone' },
-    ...Object.entries(AUDIENCES).map(([value, a]) => ({ value, label: a.label, dot: a.color })),
-  ]);
-  chipGroup($('#ageChips'), 'age', [
-    { value: '', label: 'All ages' },
-    ...AGES.map((a) => ({ value: a, label: `${a} yrs` })),
-  ]);
-  chipGroup($('#conditionChips'), 'condition', [
-    { value: '', label: 'Used & new' },
-    { value: 'used', label: 'Used' },
-    { value: 'new', label: 'New' },
-  ]);
-  chipGroup($('#priceChips'), 'band', [
-    { value: -1, label: 'Any price' },
-    ...state.bands.map((b, i) => ({ value: i, label: b.label })),
-  ]);
-  $('#likes').innerHTML = categories.map((c) => `
-    <button type="button" class="like" data-key="category" data-value="${esc(c)}" aria-pressed="${state.filter.category === c}">
-      <span aria-hidden="true">${likeIcon(c)}</span>${esc(c)}</button>`).join('');
+  state.categories = categories;
+  const f = state.filter;
+  $('#fAudience').innerHTML = options([{ value: '', label: 'Everyone' }, ...Object.entries(AUDIENCES).map(([value, a]) => ({ value, label: a.label }))], f.audience);
+  $('#fAge').innerHTML = options([{ value: '', label: 'All ages' }, ...AGES.map((a) => ({ value: a, label: `${a} years` }))], f.age);
+  $('#fBand').innerHTML = options([{ value: -1, label: 'Any price' }, ...state.bands.map((b, i) => ({ value: i, label: b.label }))], f.band);
+  $('#fCondition').innerHTML = options([{ value: '', label: 'Used & new' }, { value: 'used', label: 'Used' }, { value: 'new', label: 'New' }], f.condition);
 }
 
-function syncChips() {
-  document.querySelectorAll('[data-key]').forEach((c) => {
-    c.setAttribute('aria-pressed', String(String(state.filter[c.dataset.key]) === c.dataset.value));
-  });
+// The toy types to swipe through: only the ones with toys in the shop.
+function renderCats() {
+  const counts = new Map();
+  for (const t of state.toys) if (t.category) counts.set(t.category, (counts.get(t.category) || 0) + 1);
+  const known = (state.categories || []).filter((c) => counts.has(c));
+  const extra = [...counts.keys()].filter((c) => !known.includes(c));
+  const cats = [...known, ...extra];
+  const html = [
+    `<button type="button" class="chip cat" data-cat="" aria-pressed="${!state.filter.category}">All toys</button>`,
+    ...cats.map((c) => `<button type="button" class="chip cat" data-cat="${esc(c)}" aria-pressed="${state.filter.category === c}"><span aria-hidden="true">${likeIcon(c)}</span>${esc(c)}</button>`),
+  ].join('');
+  if ($('#cats').innerHTML !== html) $('#cats').innerHTML = html;
+}
+
+function syncFilters() {
+  const f = state.filter;
+  const active = [f.audience, f.age, f.condition].filter(Boolean).length + (f.band >= 0 ? 1 : 0);
+  $('#filterCount').textContent = active;
+  $('#filterCount').hidden = !active;
+  $('#filterBtn').classList.toggle('on', active > 0);
+  for (const s of document.querySelectorAll('[data-filter]')) s.value = String(f[s.dataset.filter]);
+  document.querySelectorAll('[data-cat]').forEach((c) => c.setAttribute('aria-pressed', String(c.dataset.cat === f.category)));
 }
 
 function matches(t) {
@@ -200,6 +198,8 @@ function sorted(list) {
   const copy = [...list];
   if (s === 'low') copy.sort((a, b) => effectivePrice(a) - effectivePrice(b));
   else if (s === 'high') copy.sort((a, b) => effectivePrice(b) - effectivePrice(a));
+  // Toys you can buy first, then toys on hold.
+  copy.sort((a, b) => (a.status === 'reserved') - (b.status === 'reserved'));
   return copy;
 }
 
@@ -231,15 +231,15 @@ function moreHtml(t) {
 const PLUS = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 const TICK = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
 
+const addButton = (id, added) => `<button class="add ${added ? 'in-cart' : ''}" data-add="${id}" aria-label="${added ? 'In cart' : 'Add to cart'}">${added ? TICK + '<span>Added</span>' : PLUS + '<span>Buy</span>'}</button>`;
+
 function cardHtml(t) {
   const sold = t.status === 'sold';
   const hold = t.status === 'reserved';
-  const added = inCart(t.id);
   const ribbon = sold ? '<span class="ribbon sold">Sold</span>'
     : hold ? '<span class="ribbon hold">On hold</span>'
     : isSpecial(t) ? '<span class="ribbon">Special</span>' : '';
-  const button = sold || hold ? ''
-    : `<button class="add ${added ? 'in-cart' : ''}" data-add="${t.id}" aria-label="${added ? 'In cart' : 'Add to cart'}">${added ? TICK + '<span>Added</span>' : PLUS + '<span>Buy</span>'}</button>`;
+  const button = sold || hold ? '' : addButton(t.id, inCart(t.id));
   return `
     <article class="card for-${esc(t.audience || 'neutral')} ${sold ? 'is-sold' : ''} ${hold ? 'is-hold' : ''}" data-id="${t.id}">
       <button class="pic" data-open="${t.id}" aria-label="See ${esc(t.name)}">
@@ -255,66 +255,199 @@ function cardHtml(t) {
     </article>`;
 }
 
-// Cards are added a screenful at a time as you scroll, so a phone never
-// has to draw hundreds of toys at once.
+// ---- The big banner: the toy or toys of the week.
+// Staff tick "Put in the big banner" on a toy. With none ticked, the
+// banner shows the specials; with no specials, the plain welcome.
+const HERO_MAX = 6;
+let heroHtml = '';
+let heroTimer;
+
+function heroToys() {
+  const live = state.toys.filter((t) => t.status === 'available');
+  const featured = live.filter((t) => t.is_featured);
+  if (featured.length) return { toys: featured.slice(0, HERO_MAX), label: 'Hot this week' };
+  const specials = live.filter(isSpecial)
+    .sort((a, b) => (b.price - effectivePrice(b)) - (a.price - effectivePrice(a)));
+  return { toys: specials.slice(0, HERO_MAX), label: 'Specials' };
+}
+
+function heroSlide(t, i, label) {
+  const p = effectivePrice(t);
+  const off = p < t.price ? Math.round((1 - p / t.price) * 100) : 0;
+  return `
+    <article class="slide for-${esc(t.audience || 'neutral')}" data-slide-i="${i}">
+      <div class="slide-text">
+        <span class="hot">🔥 ${esc(label)}</span>
+        <h2>${esc(t.name)}</h2>
+        <div class="slide-price">${kwacha(p)}${off ? `<s>${kwacha(t.price)}</s>` : ''}</div>
+        ${off ? `<span class="save">Save ${off}%</span>` : `<span class="save">${esc(CONDITIONS[t.condition] || 'Used')}${t.age_range ? ` · ${esc(t.age_range)} yrs` : ''}</span>`}
+        <div class="slide-actions">${addButton(t.id, inCart(t.id))}<button class="see" data-open="${t.id}">See it</button></div>
+      </div>
+      <button class="slide-pic" data-open="${t.id}" aria-label="See ${esc(t.name)}">
+        <img src="${esc(photoUrl(t))}" alt="${esc(t.name)}" ${i ? 'loading="lazy"' : 'fetchpriority="high"'} decoding="async">
+      </button>
+    </article>`;
+}
+
+function renderHero() {
+  const { toys, label } = heroToys();
+  const title = state.settings.hero_title?.trim() || label;
+  const html = toys.length ? `
+    <div class="slides" id="heroSlides">${toys.map((t, i) => heroSlide(t, i, title)).join('')}</div>
+    ${toys.length > 1 ? `<div class="dots">${toys.map((_, i) => `<button type="button" data-dot="${i}" aria-label="Show toy ${i + 1}" aria-current="${i === 0}"></button>`).join('')}</div>` : ''}` : '';
+  const hero = $('#hero');
+  hero.classList.toggle('has-toys', toys.length > 0);
+  if (html === heroHtml) return;
+  heroHtml = html;
+  hero.querySelector('.hero-show')?.remove();
+  hero.querySelector('.hero-plain').hidden = toys.length > 0;
+  if (!toys.length) return;
+  const show = document.createElement('div');
+  show.className = 'hero-show';
+  show.innerHTML = html;
+  hero.append(show);
+  const slides = $('#heroSlides');
+  const dots = [...hero.querySelectorAll('[data-dot]')];
+  const current = () => Math.round(slides.scrollLeft / slides.clientWidth);
+  slides.addEventListener('scroll', () => {
+    const i = current();
+    dots.forEach((d, j) => d.setAttribute('aria-current', String(i === j)));
+  }, { passive: true });
+  dots.forEach((d) => d.onclick = () => slides.scrollTo({ left: Number(d.dataset.dot) * slides.clientWidth, behavior: 'smooth' }));
+  // Moves to the next toy every few seconds, and stops once someone touches it.
+  clearInterval(heroTimer);
+  if (toys.length > 1 && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    heroTimer = setInterval(() => {
+      if (document.hidden) return;
+      const next = (current() + 1) % toys.length;
+      slides.scrollTo({ left: next * slides.clientWidth, behavior: 'smooth' });
+    }, 5000);
+    const stop = () => clearInterval(heroTimer);
+    slides.addEventListener('pointerdown', stop, { once: true });
+    slides.addEventListener('touchstart', stop, { once: true, passive: true });
+  }
+}
+
+// ---- Sections: a few main toy types, each one line you swipe sideways.
+// "See all" opens a section into a grid; "Show less" folds it back.
+const MAX_ROWS = 5;
+const ROW_MAX = 12;
 const PAGE = 24;
-let shown = PAGE;
-let lastHtml = '';
-let pager = null;
+const unfolded = new Map(); // section key -> how many cards a grid shows
+let sectionsHtml = '';
 
+function buildSections() {
+  const f = state.filter;
+  const list = sorted(state.toys.filter(matches));
+  const sold = sorted(state.sold.filter(matches));
+  const soldSection = { key: 'sold', title: 'Found new homes', icon: '💛', toys: sold, sold: true,
+    note: `${state.soldCount ?? state.sold.length} toys have found new homes. This is the kind of thing we stock. Message us if you want something similar!` };
+  if (f.q) return [{ key: 'search', title: `Results for “${f.q}”`, icon: '🔎', toys: list, always: true }, soldSection];
+  if (f.category) return [{ key: 'cat', title: f.category, icon: likeIcon(f.category), toys: list, always: true }, soldSection];
+
+  const sections = [];
+  const specials = list.filter((t) => t.status === 'available' && isSpecial(t));
+  if (specials.length) sections.push({ key: 'specials', title: 'Specials', icon: '⭐', toys: specials });
+  const groups = new Map();
+  for (const t of list) {
+    const c = t.category || '';
+    if (!groups.has(c)) groups.set(c, []);
+    groups.get(c).push(t);
+  }
+  const order = state.categories || [];
+  const rank = (c) => (order.includes(c) ? order.indexOf(c) : c ? 900 : 999);
+  const named = [...groups.keys()].filter(Boolean);
+  // The biggest toy types get their own line, in the shop's usual order.
+  const main = [...named].sort((a, b) => groups.get(b).length - groups.get(a).length || rank(a) - rank(b))
+    .slice(0, MAX_ROWS).sort((a, b) => rank(a) - rank(b));
+  for (const c of main) sections.push({ key: 'cat:' + c, title: c, icon: likeIcon(c), toys: groups.get(c), cat: c });
+  const rest = list.filter((t) => !main.includes(t.category));
+  if (rest.length) sections.push({ key: 'more', title: main.length ? 'More toys' : 'All toys', icon: '🎁', toys: rest });
+  sections.push(soldSection);
+  return sections;
+}
+
+function sectionHtml(s) {
+  const isOpen = s.always || unfolded.has(s.key);
+  const n = s.toys.length;
+  if (s.sold && !soldLoaded) {
+    if (!(state.soldCount > 0)) return '';
+    return `<section class="sec sold-sec" data-sec="sold" id="soldSec"><div class="sec-head"><h2><span aria-hidden="true">${s.icon}</span> ${esc(s.title)}</h2></div><p class="status">Loading…</p></section>`;
+  }
+  if (!n) return '';
+  const count = s.sold ? state.soldCount ?? n : n;
+  const toggle = s.always ? '' : isOpen
+    ? `<button type="button" class="sec-btn" data-fold="${esc(s.key)}">Show less</button>`
+    : n > 2 ? `<button type="button" class="sec-btn" data-unfold="${esc(s.key)}">See all ›</button>` : '';
+  const head = `<div class="sec-head"><h2><span aria-hidden="true">${s.icon}</span> ${esc(s.title)} <small>${count}</small></h2>${toggle}</div>`;
+  const note = s.sold && isOpen ? `<p class="sold-intro">${esc(s.note)}</p>` : '';
+  if (isOpen) {
+    const shown = unfolded.get(s.key) || PAGE;
+    return `<section class="sec open" data-sec="${esc(s.key)}">${head}${note}
+      <div class="grid">${s.toys.slice(0, shown).map(cardHtml).join('')}</div>
+      ${n > shown ? `<button type="button" class="btn ghost block show-more" data-more="${esc(s.key)}">Show more (${n - shown} more)</button>` : ''}
+    </section>`;
+  }
+  const extra = n - ROW_MAX;
+  return `<section class="sec" data-sec="${esc(s.key)}">${head}
+    <div class="row" data-row="${esc(s.key)}">${s.toys.slice(0, ROW_MAX).map(cardHtml).join('')}
+      ${extra > 0 ? `<button type="button" class="see-all" data-unfold="${esc(s.key)}"><b>+${extra}</b>See all</button>` : ''}
+    </div>
+  </section>`;
+}
+
+let soldWatch;
 function render({ reset = false } = {}) {
-  if (reset) shown = PAGE;
-  const forSale = state.toys;
-  const specials = forSale.filter((t) => isSpecial(t) && t.status === 'available');
-  $('#countShop').textContent = `(${forSale.filter((t) => t.status === 'available').length})`;
-  $('#countSpecials').textContent = `(${specials.length})`;
-  $('#countSold').textContent = `(${state.soldCount ?? state.sold.length})`;
-
-  let list = state.view === 'sold' ? state.sold : state.view === 'specials' ? specials : forSale;
-  list = sorted(list.filter(matches));
-  if (state.view === 'shop') {
-    // Available first, then toys on hold.
-    list.sort((a, b) => (a.status === 'reserved') - (b.status === 'reserved'));
-  }
-
-  $('#soldIntro').hidden = state.view !== 'sold';
-  if (state.view === 'sold') {
-    $('#soldIntro').textContent = `${state.soldCount ?? state.sold.length} toys have found new homes. This is the kind of thing we stock. Message us if you are looking for something similar!`;
-  }
+  if (reset) for (const k of unfolded.keys()) unfolded.set(k, PAGE);
+  renderHero();
+  renderCats();
+  syncFilters();
+  const sections = buildSections();
+  const html = sections.map(sectionHtml).join('');
   // Nothing changed (a background refresh): leave the page alone, so
-  // pictures do not flicker and the page does not jump.
-  const html = list.slice(0, shown).map(cardHtml).join('');
-  if (html !== lastHtml) {
-    $('#grid').innerHTML = html;
-    lastHtml = html;
+  // pictures do not flicker and the lines keep their place.
+  if (html !== sectionsHtml) {
+    const box = $('#sections');
+    const scrolled = {};
+    box.querySelectorAll('[data-row]').forEach((r) => { scrolled[r.dataset.row] = r.scrollLeft; });
+    box.innerHTML = html;
+    box.querySelectorAll('[data-row]').forEach((r) => { if (scrolled[r.dataset.row]) r.scrollLeft = scrolled[r.dataset.row]; });
+    sectionsHtml = html;
+    watchSold();
   }
-  watchMore(list.length > shown);
-  $('#status').textContent = list.length ? '' : state.view === 'specials'
-    ? 'No specials right now. Check back soon!'
-    : 'No toys match. Try a different filter.';
+  const forSale = sections.filter((s) => !s.sold).reduce((n, s) => n + s.toys.length, 0);
+  $('#status').textContent = forSale ? '' : 'No toys match. Try a different filter.';
   renderCartCount();
 }
 
-function watchMore(more) {
-  let sentinel = $('#more');
-  if (!sentinel) {
-    sentinel = document.createElement('div');
-    sentinel.id = 'more';
-    sentinel.className = 'more-sentinel';
-    $('#grid').after(sentinel);
-  }
-  sentinel.hidden = !more;
-  if (!pager && 'IntersectionObserver' in window) {
-    pager = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting) && !sentinel.hidden) {
-        shown += PAGE;
-        render();
-      }
-    }, { rootMargin: '800px 0px' });
-    pager.observe(sentinel);
-  } else if (!('IntersectionObserver' in window)) {
-    shown = Infinity;
-  }
+// Sold toys are only fetched when someone scrolls down to them.
+function watchSold() {
+  const sec = $('#soldSec');
+  soldWatch?.disconnect();
+  if (!sec) return;
+  if (!('IntersectionObserver' in window)) { loadSold().then(() => render()); return; }
+  soldWatch = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) {
+      soldWatch.disconnect();
+      loadSold().then(() => render());
+    }
+  }, { rootMargin: '600px 0px' });
+  soldWatch.observe(sec);
+}
+
+// Ticks the Buy buttons in place, so the lines do not jump back to the start.
+function refreshButtons(id) {
+  document.querySelectorAll(`[data-add="${CSS.escape(id)}"]`).forEach((b) => {
+    if (b.closest('#toyBody')) return;
+    b.outerHTML = addButton(id, inCart(id));
+  });
+  sectionsHtml = '';
+  heroHtml = '';
+}
+
+function scrollToSections() {
+  const top = $('.filter-line').getBoundingClientRect().top + scrollY - $('.top').offsetHeight - 8;
+  if (scrollY > top) scrollTo({ top, behavior: 'smooth' });
 }
 
 function renderCartCount() {
@@ -401,7 +534,8 @@ function addToCart(id) {
     void $('#cartBtn').offsetWidth;
     $('#cartBtn').classList.add('bump');
   }
-  render();
+  refreshButtons(id);
+  renderCartCount();
   if ($('#toyDialog').open) openToy(t);
 }
 
@@ -610,22 +744,30 @@ document.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   const el = e.target.closest('button, a');
   if (!el) return;
-  if (el.dataset.key) {
-    const v = el.dataset.value;
-    state.filter[el.dataset.key] = el.dataset.key === 'band' ? Number(v) : v;
-    syncChips();
+  if (el.dataset.cat !== undefined) {
+    state.filter.category = el.dataset.cat;
+    unfolded.delete('cat');
     render({ reset: true });
-  } else if (el.dataset.view) {
-    state.view = el.dataset.view;
-    document.querySelectorAll('.tab').forEach((t) => t.setAttribute('aria-selected', String(t === el)));
-    if (state.view === 'sold' && !soldLoaded) {
-      $('#grid').innerHTML = '';
-      lastHtml = '';
-      $('#status').textContent = 'Loading…';
-      loadSold().then(() => render({ reset: true }));
-    } else {
-      render({ reset: true });
-    }
+    el.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    scrollToSections();
+  } else if (el.id === 'filterBtn') {
+    const show = $('#filterPanel').hidden;
+    $('#filterPanel').hidden = !show;
+    el.setAttribute('aria-expanded', String(show));
+  } else if (el.id === 'clearFilters') {
+    Object.assign(state.filter, { audience: '', age: '', condition: '', band: -1, sort: 'new' });
+    render({ reset: true });
+  } else if (el.dataset.unfold) {
+    unfolded.set(el.dataset.unfold, PAGE);
+    render();
+    document.querySelector(`[data-sec="${CSS.escape(el.dataset.unfold)}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  } else if (el.dataset.fold) {
+    unfolded.delete(el.dataset.fold);
+    render();
+    document.querySelector(`[data-sec="${CSS.escape(el.dataset.fold)}"]`)?.scrollIntoView({ block: 'nearest' });
+  } else if (el.dataset.more) {
+    unfolded.set(el.dataset.more, (unfolded.get(el.dataset.more) || PAGE) + PAGE);
+    render();
   } else if (el.dataset.add) {
     addToCart(el.dataset.add);
   } else if (el.dataset.order) {
@@ -643,7 +785,8 @@ document.addEventListener('click', (e) => {
     state.cart = state.cart.filter((c) => c.id !== el.dataset.remove);
     save('as_cart', state.cart);
     renderCart();
-    render();
+    refreshButtons(el.dataset.remove);
+    renderCartCount();
     if (!state.cart.length) $('#cartDialog').close();
   } else if (el.dataset.set) {
     readForm();
@@ -674,8 +817,8 @@ document.addEventListener('change', (e) => {
   } else if (el.name === 'town_id') {
     readForm();
     renderCart();
-  } else if (el.id === 'sort') {
-    state.filter[el.id] = el.value;
+  } else if (el.dataset.filter) {
+    state.filter[el.dataset.filter] = el.dataset.filter === 'band' ? Number(el.value) : el.value;
     render({ reset: true });
   }
 });
