@@ -3,7 +3,7 @@
 import { esc } from '../lib.js';
 import { imageUrl, friendlyError } from '../db.js';
 import { $, $$, toast } from './ui.js';
-import { addMedia, removeMedia } from './photos.js';
+import { addMedia, removeMedia, flipMedia } from './photos.js';
 
 export function mediaHtml(t) {
   const media = t.media || [];
@@ -14,6 +14,7 @@ export function mediaHtml(t) {
           ${m.type === 'video' ? `<video src="${esc(imageUrl(m.path))}" muted preload="metadata"></video><b aria-hidden="true">▶</b>`
             : `<img src="${esc(imageUrl(m.path))}" alt="" loading="lazy">`}
           <button type="button" data-remove-media="${esc(m.path)}" aria-label="Remove">×</button>
+          ${m.type === 'video' ? '' : `<button type="button" class="flip" data-flip-media="${esc(m.path)}" aria-label="Flip this photo">⇋</button>`}
         </span>`).join('')}
       <label class="btn ghost small">${media.length ? 'Add more' : 'Add photos or video'}<input type="file" accept="image/*,video/*" multiple data-add-media hidden></label>
     </div>`;
@@ -35,6 +36,15 @@ export function wireMedia(el, t, onChange) {
       onChange(t);
     }
   };
+  $$('[data-flip-media]', strip).forEach((b) => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      onChange(await flipMedia(t, b.dataset.flipMedia));
+    } catch (err) {
+      b.disabled = false;
+      toast(friendlyError(err), true);
+    }
+  });
   $$('[data-remove-media]', strip).forEach((b) => b.onclick = async () => {
     try {
       onChange(await removeMedia(t, b.dataset.removeMedia));

@@ -103,6 +103,21 @@ export async function toJpeg(img, maxSide = 1600, quality = 0.88) {
   return canvasBlob(c, quality);
 }
 
+// The photo turned back the right way round (left and right swapped), on a
+// canvas. maxSide keeps very big camera photos to a size phones can handle.
+export function mirrored(img, maxSide = 3000) {
+  const [w, h] = dims(img);
+  const scale = Math.min(1, maxSide / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * scale);
+  c.height = Math.round(h * scale);
+  const ctx = c.getContext('2d');
+  ctx.translate(c.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  return c;
+}
+
 export function canvasBlob(canvas, quality = 0.9) {
   return new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not save the picture.'))), 'image/jpeg', quality));

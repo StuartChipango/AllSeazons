@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, mkdtempSync, copyFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, copyFileSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { startHarness } from './harness/server.mjs';
@@ -15,6 +15,7 @@ let playwright;
 try { playwright = require('playwright'); } catch { playwright = require(execSync('npm root -g').toString().trim() + '/playwright'); }
 
 const photo = (n) => fileURLToPath(new URL(`./fixtures/photos/${n}`, import.meta.url));
+const STORE_DIR = fileURLToPath(new URL('./.storage/', import.meta.url));
 const SHOTS = process.env.SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 let h, browser, staff, shopper;
@@ -84,6 +85,70 @@ test('fixing a label redraws the picture', async () => {
     c.querySelector('[data-f=name]')?.value === 'Big Brown Teddy' && c.querySelector('[data-seg=audience][data-value=girls]')?.getAttribute('aria-pressed') === 'true' && !c.querySelector('.working')));
   const after = await staff.locator('.rcard', { has: staff.locator('[data-f=name][value="Big Brown Teddy"]') }).locator('.pic img').getAttribute('src');
   assert.notEqual(before, after);
+});
+
+test('a mirrored photo is flipped back from the review card', async () => {
+  const card = staff.locator('.rcard', { has: staff.locator('[data-f=name][value="Big Brown Teddy"]') });
+  const id = await card.getAttribute('data-id');
+  const rawBefore = readFileSync(join(STORE_DIR, 'raw', `${id}.jpg`)).toString('base64');
+  const before = await card.locator('.pic img').getAttribute('src');
+  await card.getByRole('button', { name: /Flip photo/ }).click();
+  await staff.waitForFunction(([id, src]) => {
+    const c = document.querySelector(`.rcard[data-id="${id}"]`);
+    return c && !c.querySelector('.working') && c.querySelector('.pic img').getAttribute('src') !== src;
+  }, [id, before]);
+  const rawAfter = readFileSync(join(STORE_DIR, 'raw', `${id}.jpg`)).toString('base64');
+  // The new original is the old one with left and right swapped.
+  const diff = await staff.evaluate(async ([a, b]) => {
+    const load = async (s) => createImageBitmap(await (await fetch(`data:image/jpeg;base64,${s}`)).blob());
+    const [x, y] = await Promise.all([load(a), load(b)]);
+    const px = (img, flip) => {
+      const c = document.createElement('canvas');
+      c.width = 40; c.height = 30;
+      const ctx = c.getContext('2d');
+      if (flip) { ctx.translate(40, 0); ctx.scale(-1, 1); }
+      ctx.drawImage(img, 0, 0, 40, 30);
+      return ctx.getImageData(0, 0, 40, 30).data;
+    };
+    const d = (p, q) => p.reduce((s, v, i) => s + Math.abs(v - q[i]), 0) / p.length;
+    return { same: d(px(x), px(y)), mirrored: d(px(x, true), px(y)) };
+  }, [rawBefore, rawAfter]);
+  assert.ok(diff.mirrored < 6, `flipped photo should match the mirror image (${JSON.stringify(diff)})`);
+  assert.ok(diff.same > diff.mirrored * 2, `flipped photo should differ from the old one (${JSON.stringify(diff)})`);
+});
+
+test('the camera turns a mirrored photo back by comparing it with the live picture', async () => {
+  const result = await staff.evaluate(async () => {
+    const { looks, unmirror } = await import('../assets/js/staff/camera.js');
+    // A scene with writing on it, as the live picture shows it.
+    const scene = document.createElement('canvas');
+    scene.width = 640; scene.height = 480;
+    const ctx = scene.getContext('2d');
+    ctx.fillStyle = '#f5e6c8'; ctx.fillRect(0, 0, 640, 480);
+    ctx.fillStyle = '#c0392b'; ctx.fillRect(40, 60, 180, 300);
+    ctx.fillStyle = '#1a1424'; ctx.font = 'bold 120px sans-serif'; ctx.fillText('ABC', 260, 300);
+    const view = looks(scene, 640, 480);
+    const blobOf = (c) => new Promise((r) => c.toBlob(r, 'image/jpeg', 0.9));
+    // The phone hands back a bigger photo that is mirrored.
+    const big = document.createElement('canvas');
+    big.width = 1280; big.height = 960;
+    const b = big.getContext('2d');
+    b.translate(1280, 0); b.scale(-1, 1); b.drawImage(scene, 0, 0, 1280, 960);
+    const fixed = await unmirror(await blobOf(big), view);
+    const ok = document.createElement('canvas');
+    ok.width = 1280; ok.height = 960;
+    ok.getContext('2d').drawImage(scene, 0, 0, 1280, 960);
+    const untouched = await unmirror(await blobOf(ok), view);
+    let fixedLooksRight = false;
+    if (fixed) {
+      const back = await createImageBitmap(fixed);
+      const a = looks(back, back.width, back.height, false, 4 / 3);
+      const dist = (p, q) => p.reduce((s, v, i) => s + Math.abs(v - q[i]), 0) / p.length;
+      fixedLooksRight = dist(a.g, view.g) < 0.3;
+    }
+    return { fixed: !!fixed, fixedLooksRight, untouched: untouched === null };
+  });
+  assert.deepEqual(result, { fixed: true, fixedLooksRight: true, untouched: true });
 });
 
 test('approve all puts the toys in the shop', async () => {
@@ -344,6 +409,25 @@ test('angles of one toy and its video become one toy with a gallery', async () =
   assert.equal(await shopper.locator('#toyBody .gallery .thumbs button').count(), 3);
   assert.equal(await shopper.locator('#toyBody .gallery video').count(), 1);
   await shopper.keyboard.press('Escape');
+
+  // Photos already in stock can be flipped back from the Stock edit panel.
+  await staff.goto(`${h.url}/staff/#stock`);
+  await staff.reload();
+  await staff.locator('.item-row', { hasText: row.name }).first().click();
+  const panel = staff.locator('dialog.panel');
+  const before = await panel.locator('.preview').getAttribute('src');
+  await panel.getByRole('button', { name: /Flip photo/ }).click();
+  await staff.getByText('Photo flipped').waitFor();
+  assert.notEqual(await panel.locator('.preview').getAttribute('src'), before);
+  const media = panel.locator('[data-flip-media]');
+  const oldPath = await media.first().getAttribute('data-flip-media');
+  await media.first().click();
+  await staff.waitForFunction((p) => {
+    const b = document.querySelector('dialog.panel [data-flip-media]');
+    return b && b.dataset.flipMedia !== p;
+  }, oldPath);
+  await shot(staff, '17-stock-flip');
+  await panel.locator('[data-close-panel]').click();
 });
 
 test('the owner adds a Sales person who signs in with a short name and sees only their work', async () => {

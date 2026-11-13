@@ -2,7 +2,7 @@ import { esc, kwacha, AGES } from '../lib.js';
 import { supabase, imageUrl, friendlyError } from '../db.js';
 import { shared, refreshBadges } from './app.js';
 import { $, $$, toast, seg, confirmBox, busy } from './ui.js';
-import { reframe, replacePhoto, deleteToyFiles, relabel } from './photos.js';
+import { reframe, replacePhoto, deleteToyFiles, relabel, flipToy } from './photos.js';
 import { mediaHtml, wireMedia } from './media.js';
 
 let root = null;
@@ -25,7 +25,8 @@ function card(t) {
     : t.needs_attention ? `Not sure about this one. Please check the name.${ai.alternatives?.length ? ` It might also be: ${esc(ai.alternatives.join(', '))}.` : ''}` : '';
   return `
     <article class="rcard ${t.needs_attention ? 'attn' : ''}" data-id="${t.id}">
-      <div class="pic"><img src="${esc(imageUrl(t.image_path))}" alt="${esc(t.name)}" loading="lazy" decoding="async"></div>
+      <div class="pic"><img src="${esc(imageUrl(t.image_path))}" alt="${esc(t.name)}" loading="lazy" decoding="async">
+        ${t.image_path ? '<button type="button" class="pic-flip" data-act="flip" aria-label="Flip photo: writing reads backwards">⇋ Flip</button>' : ''}</div>
       <div class="body">
         ${t.image_path ? '' : '<label class="btn soft small">Add a photo<input type="file" accept="image/*" data-f="photo" hidden></label>'}
         ${flag ? `<div class="flag">${flag}</div>` : ''}
@@ -180,6 +181,17 @@ function wire() {
       Object.assign(t, updated);
       el.outerHTML = card(t);
       wire();
+    });
+    el.querySelector('[data-act="flip"]')?.addEventListener('click', async () => {
+      el.querySelector('.pic').insertAdjacentHTML('beforeend', '<div class="working">Flipping…</div>');
+      try {
+        Object.assign(t, await flipToy(t));
+        el.outerHTML = card(t);
+        wire();
+      } catch (err) {
+        toast(friendlyError(err), true);
+        el.querySelector('.working')?.remove();
+      }
     });
     el.querySelector('[data-act="ai"]')?.addEventListener('click', async (e) => {
       busy(e.target, true, 'AI is naming…');

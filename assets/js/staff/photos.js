@@ -1,7 +1,7 @@
 // Turning a phone photo into the plain website photo and the framed social
 // media picture, automatically.
 import { supabase, imageUrl } from '../db.js';
-import { loadBitmap, toJpeg, canvasBlob, blobToBase64, renderFrame, renderPhoto } from '../frame.js';
+import { loadBitmap, toJpeg, canvasBlob, blobToBase64, renderFrame, renderPhoto, mirrored } from '../frame.js';
 import { nameFromFile } from '../lib.js';
 
 const bitmaps = new Map();
@@ -298,6 +298,61 @@ export async function replacePhoto(toy, file, { relabel = false } = {}) {
   const saved = await reframe({ ...toy, raw_path: rawPath }, { ...changes, ...plain });
   const old = [toy.photo_path, toy.thumb_path].filter(Boolean);
   if (old.length) supabase.storage.from('toys').remove(old).catch(() => {});
+  return saved;
+}
+
+// Turn a toy's photo back the right way round (left and right swapped), for
+// photos the camera saved mirrored. Redoes the original, the website photo,
+// its small copy and the social media picture.
+export async function flipToy(toy) {
+  let src;
+  if (toy.raw_path || bitmaps.has(toy.id) || !toy.photo_path) src = await sourceImage(toy);
+  else {
+    // Older toys with no original kept: start from the website photo.
+    const res = await fetch(imageUrl(toy.photo_path));
+    if (!res.ok) throw new Error(`photo ${res.status}`);
+    src = { image: await loadBitmap(await res.blob()), cutout: null, plate: null };
+  }
+  const image = mirrored(src.image);
+  const raw = await toJpeg(image, 1600, 0.88);
+  const rawPath = toy.raw_path || `${toy.id}.jpg`;
+  const up = await supabase.storage.from('raw').upload(rawPath, raw, { contentType: 'image/jpeg', upsert: true, cacheControl: '60' });
+  if (up.error) throw up.error;
+  const next = { image, cutout: null, plate: null };
+  if (src.cutout && src.plate) {
+    next.cutout = mirrored(src.cutout);
+    next.plate = mirrored(src.plate);
+    const [cut, plate] = await Promise.all([
+      new Promise((res, rej) => next.cutout.toBlob((b) => (b ? res(b) : rej(new Error('Could not save the picture.'))), 'image/png')),
+      canvasBlob(next.plate, 0.88),
+    ]);
+    const [a, b] = await Promise.all([
+      supabase.storage.from('raw').upload(cutPath(toy.id), cut, { contentType: 'image/png', upsert: true, cacheControl: '60' }),
+      supabase.storage.from('raw').upload(platePath(toy.id), plate, { contentType: 'image/jpeg', upsert: true, cacheControl: '60' }),
+    ]);
+    if (a.error || b.error) throw a.error || b.error;
+  }
+  bitmaps.set(toy.id, next);
+  // Where the toy sits in the photo swaps sides too.
+  const f = Array.isArray(toy.focus) && toy.focus.length === 4 ? toy.focus.map(Number) : null;
+  const focus = f ? [1 - f[2], f[1], 1 - f[0], f[3]] : null;
+  const plain = await uploadPlain(toy.id, next, focus);
+  const saved = await reframe({ ...toy, raw_path: rawPath, focus }, { raw_path: rawPath, focus, has_cutout: !!next.cutout, ...plain });
+  const old = [toy.photo_path, toy.thumb_path].filter(Boolean);
+  if (old.length) supabase.storage.from('toys').remove(old).catch(() => {});
+  return saved;
+}
+
+// The same for one of the extra gallery photos.
+export async function flipMedia(toy, path) {
+  const res = await fetch(imageUrl(path));
+  if (!res.ok) throw new Error(`photo ${res.status}`);
+  const blob = await canvasBlob(mirrored(await loadBitmap(await res.blob()), 1600), 0.86);
+  const newPath = `${toy.id}/media-${Date.now()}-f.jpg`;
+  const { error } = await supabase.storage.from('toys').upload(newPath, blob, { contentType: 'image/jpeg', cacheControl: '31536000' });
+  if (error) throw error;
+  const saved = await saveMedia(toy, (toy.media || []).map((m) => (m.path === path ? { ...m, path: newPath } : m)));
+  supabase.storage.from('toys').remove([path]).catch(() => {});
   return saved;
 }
 
