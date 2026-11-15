@@ -84,6 +84,15 @@ insert into public.settings (id) values (1) on conflict (id) do nothing;
 alter table public.settings add column if not exists packaging_fee int not null default 40 check (packaging_fee >= 0);
 -- Big banner at the top of the shop: its headline (the toys in it are toys.is_featured).
 alter table public.settings add column if not exists hero_title text;
+-- Paid orders waiting to be collected: kind reminders, then a storage fee.
+-- The clock starts when the order is marked Packed (so customers never pay
+-- for our own delays). Free for storage_free_hours, then storage_fee for
+-- every full day after that, per toy or per order.
+alter table public.settings add column if not exists remind_after_hours int not null default 24 check (remind_after_hours between 1 and 720);
+alter table public.settings add column if not exists storage_free_hours int not null default 72 check (storage_free_hours between 1 and 720);
+alter table public.settings add column if not exists storage_fee int not null default 10 check (storage_fee >= 0);
+alter table public.settings add column if not exists storage_fee_per text not null default 'toy' check (storage_fee_per in ('toy', 'order'));
+alter table public.settings add column if not exists late_alert_days int not null default 4 check (late_alert_days between 1 and 60);
 
 create table if not exists public.price_tiers (
   price int primary key check (price > 0)
@@ -235,6 +244,17 @@ create table if not exists public.orders (
 );
 create index if not exists orders_status_idx on public.orders (status);
 create index if not exists orders_phone_idx on public.orders (phone);
+-- Collection tracking: when the kind reminder and the storage fee notice
+-- went to the customer, the storage fee charged at collection (already
+-- included in total) and whether the owner let it go.
+alter table public.orders add column if not exists reminded_at timestamptz;
+alter table public.orders add column if not exists fee_notice_at timestamptz;
+alter table public.orders add column if not exists storage_fee int not null default 0;
+alter table public.orders add column if not exists storage_waived boolean not null default false;
+-- A problem staff must sort out, e.g. a toy in this order was also sold
+-- in the shop. Cleared by staff once it is sorted.
+alter table public.orders add column if not exists flag text;
+alter table public.orders add column if not exists flagged_at timestamptz;
 
 create table if not exists public.order_items (
   id bigserial primary key,
@@ -694,6 +714,15 @@ begin
       if not v_was_sold then
         raise exception 'Mark the order as paid first.' using errcode = 'P0001';
       end if;
+      if o.status = 'packed' and p_status in ('sent', 'delivered') then
+        -- Leaving the shelf: the storage fee due is added to the bill.
+        update public.orders set storage_fee = (public.storage_info(o)->>'fee')::int,
+          total = o.total - o.storage_fee + (public.storage_info(o)->>'fee')::int
+        where id = o.id returning * into o;
+        if o.storage_fee > 0 then
+          perform public._log('storage_fee', 'Storage fee K' || o.storage_fee || ' on ' || o.code, null, o.id);
+        end if;
+      end if;
       update public.orders set status = p_status,
         packed_at = case when p_status = 'packed' then now() else packed_at end,
         sent_at = case when p_status = 'sent' then now() else sent_at end,
@@ -756,6 +785,99 @@ begin
   where o2.id = o.id
   returning o2.* into o;
   return o;
+end;
+$$;
+
+-- How long a packed order has waited for the customer and the storage fee
+-- so far. Read it in the app with select('*, storage_info').
+--   stage: none (not waiting on the customer), ok, remind (send the kind
+--   reminder), notice (free time is over: send the fee notice), late
+--   (waiting longer than late_alert_days: tell the team).
+create or replace function public.storage_info(o public.orders) returns jsonb
+language sql stable set search_path = public as $$
+  with s as (select * from public.settings where id = 1),
+  x as (
+    select o.status = 'packed' and o.channel = 'online'
+             and o.delivery_method is distinct from 'courier' and o.packed_at is not null as waits,
+           greatest(0, floor(extract(epoch from (now() - o.packed_at)) / 3600))::int as hours,
+           (select coalesce(sum(qty), 0)::int from public.order_items where order_id = o.id) as toys
+  ),
+  y as (
+    select x.*, s.*,
+           case when x.waits then greatest(0, (x.hours - s.storage_free_hours) / 24) else 0 end as days
+    from x, s
+  )
+  select jsonb_build_object(
+    'waits', y.waits,
+    'hours', case when y.waits then y.hours else 0 end,
+    'toys', y.toys,
+    'fee_days', y.days,
+    'per_day', case when y.storage_fee_per = 'toy' then y.storage_fee * y.toys else y.storage_fee end,
+    'fee', case when o.storage_waived then 0
+                else y.days * case when y.storage_fee_per = 'toy' then y.storage_fee * y.toys else y.storage_fee end end,
+    'stage', case when not y.waits then 'none'
+                  when y.hours >= y.late_alert_days * 24 then 'late'
+                  when y.hours >= y.storage_free_hours then 'notice'
+                  when y.hours >= y.remind_after_hours then 'remind'
+                  else 'ok' end,
+    'remind_due', y.waits and y.hours >= y.remind_after_hours and y.hours < y.storage_free_hours and o.reminded_at is null,
+    'notice_due', y.waits and y.hours >= y.storage_free_hours and o.fee_notice_at is null
+  ) from y;
+$$;
+
+-- The customer came for their order (or the driver took it): charges the
+-- storage fee due, unless the owner lets it go, and closes the order.
+create or replace function public.collect_order(p_order uuid, p_waive boolean default false) returns public.orders
+language plpgsql security definer set search_path = public as $$
+declare
+  o public.orders;
+  v_fee int;
+begin
+  perform public._require_role('sales');
+  select * into o from public.orders where id = p_order for update;
+  if not found then
+    raise exception 'Order not found.' using errcode = 'P0001';
+  end if;
+  if o.status <> 'packed' then
+    raise exception 'Only packed orders can be collected.' using errcode = 'P0001';
+  end if;
+  v_fee := (public.storage_info(o)->>'fee')::int;
+  if p_waive and v_fee > 0 then
+    perform public._require_role('owner');
+    update public.orders set storage_waived = true where id = o.id;
+    perform public._log('storage_fee', 'Let go of the K' || v_fee || ' storage fee on ' || o.code, null, o.id);
+  end if;
+  return public.set_order_status(o.id, case when o.delivery_method = 'pickup' then 'delivered' else 'sent' end);
+end;
+$$;
+
+-- A toy was also sold somewhere else (usually in the shop): put a warning
+-- on every open order holding it, so staff sort out who gets the toy and
+-- nobody counts the money twice. Returns the orders flagged.
+create or replace function public.flag_toy_conflict(p_toys uuid[], p_note text default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v jsonb;
+begin
+  perform public._require_role('sales');
+  with hit as (
+    select distinct o.id, string_agg(distinct oi.name || coalesce(' (' || oi.toy_code || ')', ''), ', ') as names
+    from public.orders o join public.order_items oi on oi.order_id = o.id
+    where oi.toy_id = any(p_toys) and o.channel = 'online' and o.status in ('held', 'confirmed', 'paid', 'packed')
+    group by o.id
+  ), upd as (
+    update public.orders o
+    set flag = left(coalesce(nullif(btrim(p_note), ''), 'Also sold in the shop') || ': ' || hit.names, 300),
+        flagged_at = now()
+    from hit where o.id = hit.id
+    returning o.code, o.customer_name, o.phone, o.status, o.flag
+  )
+  select coalesce(jsonb_agg(to_jsonb(upd) order by upd.code), '[]') into v from upd;
+  if jsonb_array_length(v) > 0 then
+    perform public._log('order_flag', 'Flagged ' || (select string_agg(x->>'code', ', ') from jsonb_array_elements(v) x)
+      || ': ' || coalesce(nullif(btrim(p_note), ''), 'also sold in the shop'));
+  end if;
+  return v;
 end;
 $$;
 
@@ -1145,6 +1267,12 @@ grant execute on function public.my_staff() to authenticated;
 revoke execute on function public.approve_toys(uuid[]) from public, anon;
 revoke execute on function public.set_order_status(uuid, text) from public, anon;
 revoke execute on function public.shop_sale(jsonb, text, text) from public, anon;
+revoke execute on function public.collect_order(uuid, boolean) from public, anon;
+revoke execute on function public.flag_toy_conflict(uuid[], text) from public, anon;
+grant execute on function public.collect_order(uuid, boolean) to authenticated;
+grant execute on function public.flag_toy_conflict(uuid[], text) to authenticated;
+revoke execute on function public.storage_info(public.orders) from public, anon;
+grant execute on function public.storage_info(public.orders) to authenticated;
 grant execute on function public.place_order(jsonb, jsonb) to anon, authenticated;
 grant execute on function public.get_order_public(text, text) to anon, authenticated;
 grant execute on function public.release_expired_holds() to anon, authenticated;

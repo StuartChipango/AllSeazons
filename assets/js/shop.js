@@ -1,7 +1,7 @@
 import { supabase, imageUrl, friendlyError, configured } from './db.js';
 import {
   esc, kwacha, effectivePrice, isSpecial, parcelSize, courierFee, waLink, orderMessage,
-  CONDITIONS, AGES, PAYMENTS, timeLabel, storagePolicy, waitsAtShop, upsellPicks,
+  CONDITIONS, AGES, PAYMENTS, timeLabel, storagePolicy, setStorage, waitsAtShop, upsellPicks,
 } from './lib.js';
 import { track } from './track.js';
 
@@ -51,6 +51,8 @@ async function loadAll() {
     supabase.from('categories').select('name').order('sort'),
   ]);
   if (settings.data) state.settings = settings.data;
+  setStorage(state.settings);
+  $('#footPolicy').textContent = storagePolicy();
   state.towns = towns.data || [];
   state.categories = (cats.data || []).map((c) => c.name);
   if (state.settings.announcement) {

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Needs attention preview</title>
+<link rel="stylesheet" href="../../assets/css/base.css">
+<link rel="stylesheet" href="../../assets/css/staff.css">
+<style>body { padding: 14px; max-width: 480px; margin: 0 auto; }</style>
+</head>
+<body>
+<main id="main"></main>
+<script type="module">
+// Shows the Home "Needs attention" card and the collection bill with made-up orders.
+import { shared } from '../../assets/js/staff/app.js';
+import { alertsFor, alertsHtml } from '../../assets/js/staff/waiting.js';
+import { kwacha, waitLabel, reminderMessage } from '../../assets/js/lib.js';
+shared.me = { roles: ['owner'] };
+shared.settings = { storage_free_hours: 72 };
+const ago = (h) => new Date(Date.now() - h * 3600e3).toISOString();
+const o = (code, name, status, extra = {}) => ({ id: code, code, customer_name: name, phone: '0977123456', status, delivery_method: 'pickup', ...extra });
+const list = [
+  o('ORD-1012', 'Mary Phiri', 'paid', { flag: 'Also sold in the shop: Pink Pony (AS-0142)' }),
+  o('ORD-1009', 'Jane Banda', 'packed', { packed_at: ago(26), storage_info: { waits: true, hours: 26, stage: 'remind', remind_due: true } }),
+  o('ORD-1004', 'Chanda Mwila', 'packed', { packed_at: ago(74), storage_info: { waits: true, hours: 74, stage: 'notice', notice_due: true, toys: 2, per_day: 20 } }),
+  o('ORD-1001', 'Bwalya Tembo', 'packed', { packed_at: ago(121), storage_info: { waits: true, hours: 121, stage: 'late', fee: 40, fee_days: 2, per_day: 20 } }),
+  o('ORD-1010', 'Lungu Musonda', 'paid', { paid_at: ago(30) }),
+];
+const late = list[3];
+document.getElementById('main').innerHTML = alertsHtml(alertsFor(list)) + `
+  <section class="card-box" style="margin-top:14px">
+    <h2>${late.code} · ${late.customer_name}</h2>
+    <p class="lead" style="margin:0 0 6px">Waited ${waitLabel(121)} since it was packed.</p>
+    <table class="bill"><tbody>
+      <tr><td>Toys (already paid)</td><td>${kwacha(200)}</td></tr>
+      <tr><td>Storage: 2 days × ${kwacha(20)}</td><td>${kwacha(40)}</td></tr>
+      <tr class="due"><td>To pay now</td><td>${kwacha(40)}</td></tr>
+    </tbody></table>
+    <div class="row-actions"><button class="btn ghost">Let the fee go</button><button class="btn go">Paid K40, hand over</button></div>
+  </section>
+  <section class="card-box" style="margin-top:14px"><h2>Messages</h2>
+  ${['remind', 'notice', 'fee'].map((k, i) => `<p style="white-space:pre-wrap;background:#dcf8c6;padding:8px 10px;border-radius:10px;font-size:14px">${reminderMessage(list[[1, 2, 3][i]], k, list[[1, 2, 3][i]].storage_info)}</p>`).join('')}</section>`;
+</script>
+</body>
+</html>

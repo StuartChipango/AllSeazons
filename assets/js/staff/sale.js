@@ -3,12 +3,14 @@
 import { esc, kwacha, effectivePrice, waLink, PAYMENTS, timeLabel } from '../lib.js';
 import { supabase, imageUrl, friendlyError } from '../db.js';
 import { refreshBadges } from './app.js';
-import { $, $$, openPanel, busy } from './ui.js';
+import { $, $$, openPanel, busy, confirmBox, toast } from './ui.js';
 
 const SHOW = 60;
 let root = null;
 let mode = 'shop';
 let toys = [];
+// Toys already held or sold online, so a search for one shows who has it.
+let taken = [];
 let towns = [];
 let q = '';
 const picked = new Set();
@@ -16,10 +18,16 @@ const picked = new Set();
 export async function show(main) {
   root = main;
   mode = location.hash.includes('?wa') ? 'wa' : 'shop';
-  const [t, w] = await Promise.all([
+  const [t, w, k] = await Promise.all([
     supabase.from('toys').select('*').eq('status', 'available').order('approved_at', { ascending: false, nullsFirst: false }).limit(2000),
     mode === 'wa' ? supabase.from('towns').select('id,name').eq('active', true).order('name') : { data: [] },
+    supabase.from('toys').select('id, code, name, status, thumb_path, photo_path, image_path, order_items(orders(code, customer_name, status, channel))')
+      .in('status', ['reserved', 'sold']).order('updated_at', { ascending: false }).limit(800),
   ]);
+  taken = (k.data || []).map((x) => ({
+    ...x,
+    holders: (x.order_items || []).map((i) => i.orders).filter((o) => o && o.channel === 'online' && ['held', 'confirmed', 'paid', 'packed'].includes(o.status)),
+  }));
   if (t.error) throw t.error;
   toys = t.data || [];
   towns = w.data || [];
@@ -45,7 +53,22 @@ function gridHtml() {
     <button type="button" class="pick" data-pick="${t.id}" aria-pressed="${picked.has(t.id)}">
       <img src="${esc(thumb(t))}" alt="" loading="lazy" decoding="async" width="160" height="160">
       <div>${esc(t.name)}<b>${kwacha(effectivePrice(t))}</b></div>
-    </button>`).join('') || '<p class="lead">No toys match.</p>';
+    </button>`).join('') + takenHtml() || '<p class="lead">No toys match.</p>';
+}
+
+// A search that finds a toy already held or sold online: say who has it,
+// so it is not sold twice, and let staff flag it if it already went.
+function takenHtml() {
+  if (!q) return '';
+  return taken.filter(matches).slice(0, 12).map((t) => {
+    const h = t.holders[0];
+    const who = h ? `${h.status === 'held' || h.status === 'confirmed' ? 'On hold' : 'Paid'} online: ${h.code} ${h.customer_name}` : 'Already sold';
+    return `
+    <button type="button" class="pick taken" data-taken="${t.id}">
+      <img src="${esc(thumb(t))}" alt="" loading="lazy" decoding="async" width="160" height="160">
+      <div>${esc(t.name)}<small>${esc(who)}</small></div>
+    </button>`;
+  }).join('');
 }
 
 function barHtml() {
@@ -70,6 +93,8 @@ function render() {
     timer = setTimeout(() => { q = e.target.value.trim(); $('#pickGrid', root).innerHTML = gridHtml(); }, 120);
   };
   root.onclick = (e) => {
+    const tk = e.target.closest('[data-taken]');
+    if (tk) { takenToy(taken.find((x) => x.id === tk.dataset.taken)); return; }
     const b = e.target.closest('[data-pick]');
     if (b) {
       const id = b.dataset.pick;
@@ -82,6 +107,16 @@ function render() {
       if (mode === 'wa') waPanel(); else shopSale();
     }
   };
+}
+
+async function takenToy(t) {
+  const h = t.holders[0];
+  if (!h) return toast(`${t.name} (${t.code}) is already sold. Do not sell it again.`, true);
+  const yes = await confirmBox(`${t.name} (${t.code}) belongs to online order ${h.code} for ${h.customer_name}. Do not sell it. If it was already sold here in the shop, flag ${h.code} so the team can sort it out with the customer.`, { ok: 'It was sold here: flag it', danger: true });
+  if (!yes) return;
+  const { data, error } = await supabase.rpc('flag_toy_conflict', { p_toys: [t.id], p_note: 'Also sold in the shop' });
+  if (error) return toast(friendlyError(error), true);
+  toast(`Flagged ${(data || []).map((o) => o.code).join(', ') || h.code}. It shows on Home until it is sorted.`);
 }
 
 async function shopSale() {

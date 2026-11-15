@@ -83,3 +83,15 @@ Free, built in, no extra account. After running the latest `schema-paste.sql`, t
 5. Walk-in sale: **Stock**, tick the toys, **Sell in shop**.
 
 Tip: on your phone, open the staff app and choose **Add to Home Screen** so it opens like an app.
+
+## Uncollected orders, storage fee and the team group
+
+After running the latest `schema-paste.sql`:
+
+- **Inbox > Packed, waiting** shows how long each pickup or Lusaka delivery order has waited since it was packed, and the storage fee so far.
+- After 24 hours the order gets a **Send kind reminder** button; at 72 hours a **Send storage fee notice** button. Each opens WhatsApp with the message ready, you press send.
+- From then on the fee adds up for every full day (K10 per toy by default; change it, or switch to per order, in **Settings > Collection reminders and storage fee**).
+- When the customer comes, tap **Collected**: the app shows the bill with the storage fee. Only the owner can let the fee go.
+- **Home > Needs attention** lists reminders to send, orders waiting over 4 days, paid orders not packed, courier parcels not sent, and toys sold twice.
+- **Send today's report to the team group** on Home opens WhatsApp with today's sales, orders collected and what needs attention. Pick your team group and send.
+- If a shop sale finds a toy already held for an online order, that order is flagged on Home until someone taps **Sorted**.

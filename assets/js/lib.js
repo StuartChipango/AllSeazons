@@ -29,11 +29,68 @@ export function kwacha(n) {
 }
 
 export const effectivePrice = (toy) => (toy.sale_price ?? null) !== null ? toy.sale_price : toy.price;
-// Paid toys are kept for a while, then a small storage fee per toy per day.
-export const STORAGE = { hours: 72, feePerDay: 10 };
+// Paid toys are kept for a while, then a small storage fee per toy (or per
+// order) per day. The shop and staff app copy the owner's settings in here.
+export const STORAGE = { hours: 72, feePerDay: 10, per: 'toy' };
+export function setStorage(settings = {}) {
+  if (settings.storage_free_hours) STORAGE.hours = settings.storage_free_hours;
+  if (settings.storage_fee !== undefined && settings.storage_fee !== null) STORAGE.feePerDay = settings.storage_fee;
+  if (settings.storage_fee_per) STORAGE.per = settings.storage_fee_per;
+}
+const daysWord = (h) => (h % 24 === 0 ? ` (${h / 24} day${h === 24 ? '' : 's'})` : '');
+const perWord = () => (STORAGE.per === 'order' ? 'per order' : 'per toy');
 export const storagePolicy = (short = false) => short
-  ? `Collect within ${STORAGE.hours} hours of paying. After that, ${kwacha(STORAGE.feePerDay)} a day per toy for storage.`
-  : `After you pay, we keep your toys for ${STORAGE.hours} hours (3 days). After that we charge a storage fee of ${kwacha(STORAGE.feePerDay)} per toy for every day they are not collected.`;
+  ? `Collect within ${STORAGE.hours} hours of paying. After that, ${kwacha(STORAGE.feePerDay)} a day ${perWord()} for storage.`
+  : `After you pay, we keep your toys for ${STORAGE.hours} hours${daysWord(STORAGE.hours)}. After that we charge a storage fee of ${kwacha(STORAGE.feePerDay)} ${perWord()} for every day they are not collected.`;
+
+// "2 days 5 h", "7 h": how long an order has waited.
+export function waitLabel(hours) {
+  const h = Math.max(0, Math.floor(hours || 0));
+  const d = Math.floor(h / 24);
+  if (!d) return `${h} h`;
+  return `${d} day${d === 1 ? '' : 's'}${h % 24 ? ` ${h % 24} h` : ''}`;
+}
+
+// Kind WhatsApp messages to a customer whose packed order is waiting.
+//   remind: after a day ("packed and waiting")
+//   notice: free time is over, the storage fee starts
+//   fee:    how much storage has added up so far
+export function reminderMessage(order, kind, info = {}) {
+  const name = String(order.customer_name || '').trim().split(/\s+/)[0] || 'there';
+  const how = order.delivery_method === 'yango' ? 'for delivery' : 'for you to collect';
+  const perDay = info.per_day ?? (STORAGE.per === 'order' ? STORAGE.feePerDay : STORAGE.feePerDay * (info.toys || 1));
+  if (kind === 'remind') {
+    return `Hi ${name}! A kind reminder from All Seazons Play: your order ${order.code} is packed and waiting ${how}. `
+      + 'Please let us know when suits you. Thank you! 😊';
+  }
+  if (kind === 'notice') {
+    return `Hi ${name}, a kind note from All Seazons Play: your order ${order.code} has been waiting ${waitLabel(info.hours ?? STORAGE.hours)}. `
+      + `We keep paid orders free for ${STORAGE.hours} hours. After this, a storage fee of ${kwacha(STORAGE.feePerDay)} ${perWord()} per day is added`
+      + `${perDay !== STORAGE.feePerDay ? ` (${kwacha(perDay)} a day for your order)` : ''}. `
+      + `Please ${order.delivery_method === 'yango' ? 'tell us when we can deliver' : 'collect it'} soon. Thank you! 🙏`;
+  }
+  return `Hi ${name}, your All Seazons order ${order.code} is still waiting ${how} (${waitLabel(info.hours)}). `
+    + `Storage so far: ${kwacha(info.fee || 0)}, going up ${kwacha(perDay)} a day. Please let us know when you can come. Thank you!`;
+}
+
+// The daily message for the team's WhatsApp group.
+export function teamReport({ day, sales = [], done = [], alerts = [] }) {
+  const shop = sales.filter((o) => o.channel === 'shop');
+  const online = sales.filter((o) => o.channel !== 'shop');
+  const sum = (list) => list.reduce((s, o) => s + (o.total || 0), 0);
+  const lines = [`*All Seazons Play · ${day}*`, ''];
+  lines.push(`*Sales today: ${kwacha(sum(sales))}* (${sales.length} order${sales.length === 1 ? '' : 's'})`);
+  lines.push(`- Shop: ${shop.length} · ${kwacha(sum(shop))}`);
+  lines.push(`- Online: ${online.length} · ${kwacha(sum(online))}`);
+  if (done.length) {
+    lines.push('', `*Collected or sent today: ${done.length}*`);
+    done.forEach((o) => lines.push(`- ${o.code} ${o.customer_name}${o.storage_fee ? ` (storage ${kwacha(o.storage_fee)})` : ''}`));
+  }
+  lines.push('', alerts.length ? `*Needs attention: ${alerts.length}*` : '*Nothing waiting. Well done!*');
+  alerts.forEach((a) => lines.push(`- ${a.text}`));
+  return lines.join('\n');
+}
+
 // "Add one more?" at checkout: toys like the ones already picked (same
 // type, age and boy/girl), cheapest first, never one already in the order.
 export function upsellPicks(toys, cartIds, limit = 8) {

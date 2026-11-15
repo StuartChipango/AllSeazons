@@ -476,3 +476,25 @@ html.cam-open, html.cam-open body { overflow: hidden; }
 .st-q small { color: var(--muted); font-weight: 600; }
 .st-q[aria-pressed="true"] { background: var(--yellow); box-shadow: var(--pop-sm); }
 .st-save-actions { display: grid; gap: 10px; margin: 6px 0 18px; }
+
+/* Needs attention (Home and Inbox) */
+.alerts { margin-bottom: 14px; }
+.alerts h2 { display: flex; align-items: center; gap: 8px; }
+.alerts h2 .n { font-size: 14px; background: var(--yellow); border: 2px solid var(--ink); border-radius: 10px; padding: 0 8px; }
+.alerts ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 8px; }
+.alerts li { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; padding: 8px 10px; border-radius: 14px; background: #fef0c7; }
+.alerts li.flag { background: #fde1d3; color: var(--bad); }
+.alerts li.team { background: #dce6f6; }
+.alerts li > span:nth-child(2) { flex: 1; min-width: 0; }
+.alerts li .btn { flex: none; }
+.wait { display: inline-block; font-size: 12px; font-weight: 800; padding: 3px 8px; border-radius: 10px; border: 2px solid var(--ink); background: #e8f5c8; }
+.wait.remind { background: var(--yellow); }
+.wait.notice, .wait.late { background: #fde1d3; color: var(--bad); }
+.flag-line { margin: 8px 0 0; padding: 8px 10px; border-radius: 12px; background: #fde1d3; color: var(--bad); font-size: 14px; font-weight: 700; }
+.bill { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 15px; }
+.bill td { padding: 6px 0; border-bottom: 1px dashed #ccc; }
+.bill td:last-child { text-align: right; font-weight: 700; }
+.bill tr.due td { border: 0; font: 700 20px var(--display); padding-top: 10px; }
+.pick.taken { opacity: .6; }
+.pick.taken small { display: block; color: var(--bad); font-weight: 800; }
+.report-btn { margin: 0 0 14px; }

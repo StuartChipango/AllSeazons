@@ -1,6 +1,8 @@
 import { esc, kwacha, AUDIENCES } from '../lib.js';
 import { supabase, imageUrl } from '../db.js';
 import { shared, can } from './app.js';
+import { toast } from './ui.js';
+import { loadAlerts, alertsHtml, wireAlerts, dailyReport, shareToGroup } from './waiting.js';
 
 function weekStart() {
   // Monday 00:00 in Lusaka (UTC+2, no daylight saving).
@@ -67,6 +69,7 @@ export async function show(main) {
   ]);
 
   const visits = await visitorsToday;
+  const alerts = can('sales') ? await loadAlerts() : [];
   const sales = (week.data || []).reduce((s, o) => s + o.total, 0);
   const goal = shared.settings?.weekly_goal || 0;
   const items = soldItems.data || [];
@@ -88,6 +91,8 @@ export async function show(main) {
       <img class="mascot" src="../assets/img/mascots/sammy.webp" alt="" width="104" height="127" loading="lazy" decoding="async">
     </section>
     <h1 class="sr-only">Home</h1>
+    ${alertsHtml(alerts, { limit: 6 })}
+    ${can('sales') ? '<button class="btn wa block report-btn" id="teamReport" type="button">Send today’s report to the team group</button>' : ''}
     <nav class="stories" aria-label="Jobs waiting">
       ${story('#review', review.count, 'Review', 'stock')}
       ${story('#orders', open.count, 'To confirm', 'sales')}
@@ -119,4 +124,11 @@ export async function show(main) {
     </section>
     </details>
     <div class="mobile-more">${can('stock') ? '<a class="btn ghost" href="#boxes">Boxes</a>' : ''}<a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
+  wireAlerts(main, alerts, () => show(main));
+  const rep = main.querySelector('#teamReport');
+  if (rep) rep.onclick = async () => {
+    rep.disabled = true;
+    try { await shareToGroup(await dailyReport()); } catch (e) { toast(e.message || 'Could not make the report', true); }
+    rep.disabled = false;
+  };
 }

@@ -127,6 +127,25 @@ function activityHtml(activity, staff) {
     </section>`;
 }
 
+// Paid orders waiting to be collected: reminders and the storage fee.
+function storageHtml(s) {
+  return `
+    <section class="settings-section card-box" id="storage">
+      <h2>Collection reminders and storage fee</h2>
+      <p class="lead" style="margin:0 0 10px">For pickup and Lusaka delivery orders. The clock starts when an order is marked Packed. The website shows customers the same rule.</p>
+      <form id="storageForm">
+        <div class="form-grid">
+          <label class="field"><span>Kind reminder after (hours)</span><input type="number" name="remind_after_hours" min="1" max="720" value="${s.remind_after_hours}"></label>
+          <label class="field"><span>Free storage for (hours)</span><input type="number" name="storage_free_hours" min="1" max="720" value="${s.storage_free_hours}"><small>Then the fee notice, and the fee for every full day after.</small></label>
+          <label class="field"><span>Storage fee a day (K)</span><input type="number" name="storage_fee" min="0" value="${s.storage_fee}"><small>0 = no fee.</small></label>
+          <label class="field"><span>Warn the team after (days)</span><input type="number" name="late_alert_days" min="1" max="60" value="${s.late_alert_days}"></label>
+        </div>
+        <div class="field"><span>The fee is charged</span>${seg('storage_fee_per', s.storage_fee_per, [['toy', 'Per toy'], ['order', 'Per order']])}</div>
+        <div class="row-actions"><button class="btn" type="submit">Save</button></div>
+      </form>
+    </section>`;
+}
+
 // Camera and social media picture choices (kept on this phone).
 function picturesHtml() {
   const p = prefs();
@@ -172,6 +191,8 @@ function render(towns, staff, activity) {
         <div class="row-actions"><button class="btn" type="submit">Save shop settings</button></div>
       </form>
     </section>
+
+    ${'storage_fee' in s ? storageHtml(s) : ''}
 
     ${picturesHtml()}
 
@@ -238,6 +259,32 @@ function wire() {
     toast('Shop settings saved');
     shared.refresh();
   };
+
+  const sf = $('#storageForm', root);
+  if (sf) {
+    let per = shared.settings.storage_fee_per;
+    $$('[data-seg="storage_fee_per"]', sf).forEach((b) => b.onclick = () => {
+      per = b.dataset.value;
+      $$('[data-seg="storage_fee_per"]', sf).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    });
+    sf.onsubmit = async (e) => {
+      e.preventDefault();
+      const f = Object.fromEntries(new FormData(sf));
+      const n = (k) => parseInt(f[k], 10);
+      const rec = {
+        remind_after_hours: n('remind_after_hours'), storage_free_hours: n('storage_free_hours'),
+        storage_fee: Math.max(0, n('storage_fee') || 0), late_alert_days: n('late_alert_days'), storage_fee_per: per,
+        updated_at: new Date().toISOString(),
+      };
+      if (rec.remind_after_hours >= rec.storage_free_hours) return toast('Send the kind reminder before the free time ends.', true);
+      busy(e.submitter, true);
+      const { error } = await supabase.from('settings').update(rec).eq('id', 1);
+      busy(e.submitter, false);
+      if (error) return toast(friendlyError(error), true);
+      toast('Storage rules saved');
+      shared.refresh();
+    };
+  }
 
   const run = async (promise, msg) => {
     const { error } = await promise;

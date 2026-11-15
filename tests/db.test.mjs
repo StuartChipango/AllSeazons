@@ -231,6 +231,79 @@ test('a shop sale records a paid walk-in order', async () => {
   assert.equal((await toy(t.id)).status, 'sold');
 });
 
+const info = async (code) => staff(async () => (await db.query('select storage_info(o) as i from orders o where code=$1', [code])).rows[0].i);
+async function packedOrder(toys, customer = {}, hoursAgo = 0) {
+  const ids = [];
+  for (const name of toys) ids.push((await addToy({ name, price: 100 })).id);
+  const r = await place(ids.map((id) => ({ toy_id: id })), { ...lusakaPickup, phone: freshPhone(), ...customer });
+  const o = await order(r.code);
+  await staff(() => db.query('select set_order_status($1,$2)', [o.id, 'paid']));
+  await staff(() => db.query('select set_order_status($1,$2)', [o.id, 'packed']));
+  await db.query(`update orders set packed_at = now() - make_interval(hours => $2) where id=$1`, [o.id, hoursAgo]);
+  return { ...o, toyIds: ids };
+}
+
+test('packed orders waiting for the customer: reminder at 24h, notice at 72h, team alert at 4 days', async () => {
+  const fresh = await packedOrder(['A'], {}, 2);
+  assert.equal((await info(fresh.code)).stage, 'ok');
+  const day = await packedOrder(['B'], {}, 25);
+  let i = await info(day.code);
+  assert.equal(i.stage, 'remind');
+  assert.equal(i.remind_due, true);
+  assert.equal(i.fee, 0);
+  await staff(() => db.query('update orders set reminded_at=now() where id=$1', [day.id]));
+  assert.equal((await info(day.code)).remind_due, false);
+  const three = await packedOrder(['C'], {}, 73);
+  i = await info(three.code);
+  assert.equal(i.stage, 'notice');
+  assert.equal(i.notice_due, true);
+  assert.equal(i.fee, 0, 'the first extra day is not charged until it is complete');
+  const late = await packedOrder(['D', 'E'], {}, 24 * 5 + 1);
+  i = await info(late.code);
+  assert.equal(i.stage, 'late');
+  assert.equal(i.fee_days, 2);
+  assert.equal(i.fee, 40, '2 days x K10 x 2 toys');
+  const courier = await packedOrder(['F'], { location: 'out_of_town', delivery_method: 'courier', town_id: (await db.query(`select id from towns where name='Kitwe'`)).rows[0].id }, 200);
+  assert.equal((await info(courier.code)).stage, 'none', 'courier parcels wait on us, not the customer');
+});
+
+test('collecting adds the storage fee to the bill; per order fee and owner waiver work', async () => {
+  const o = await packedOrder(['G'], {}, 24 * 6);
+  const before = await order(o.code);
+  const done = await staff(async () => (await db.query('select * from collect_order($1)', [o.id])).rows[0]);
+  assert.equal(done.status, 'delivered');
+  assert.equal(done.storage_fee, 30);
+  assert.equal(done.total, before.total + 30);
+
+  await db.query(`update settings set storage_fee_per='order', storage_fee=15`);
+  const two = await packedOrder(['H', 'I'], { delivery_method: 'yango', address: 'Plot 5, Kabulonga' }, 24 * 5);
+  assert.equal((await info(two.code)).fee, 30, '2 days x K15 per order');
+  const sent = await staff(async () => (await db.query('select * from collect_order($1)', [two.id])).rows[0]);
+  assert.equal(sent.status, 'sent');
+  assert.equal(sent.storage_fee, 30);
+  await db.query(`update settings set storage_fee_per='toy', storage_fee=10`);
+
+  const w = await packedOrder(['J'], {}, 24 * 6);
+  await db.query(`insert into staff(email, roles) values ('till@allseazons.test', '{sales}') on conflict do nothing`);
+  await assert.rejects(as('authenticated', 'till@allseazons.test', () => db.query('select collect_order($1, true)', [w.id])), /owner/);
+  const waived = await staff(async () => (await db.query('select * from collect_order($1, true)', [w.id])).rows[0]);
+  assert.equal(waived.storage_fee, 0);
+  assert.equal(waived.storage_waived, true);
+});
+
+test('a toy sold in the shop flags the online order holding it', async () => {
+  const t = await addToy({ name: 'Twin Doll', code: 'AS-TWIN' });
+  const r = await place([{ toy_id: t.id }], { ...lusakaPickup, phone: freshPhone() });
+  await assert.rejects(staff(() => db.query('select shop_sale($1)', [JSON.stringify([{ toy_id: t.id }])])), /just sold or went on hold/);
+  const hit = await staff(async () => (await db.query('select flag_toy_conflict($1) as v', [[t.id]])).rows[0].v);
+  assert.equal(hit.length, 1);
+  assert.equal(hit[0].code, r.code);
+  const o = await order(r.code);
+  assert.match(o.flag, /Also sold in the shop: Twin Doll \(AS-TWIN\)/);
+  assert.ok(o.flagged_at);
+  await assert.rejects(anon(() => db.query('select flag_toy_conflict($1)', [[t.id]])));
+});
+
 test('approving moves reviewed toys into the shop', async () => {
   const t = await addToy({ status: 'review' });
   const noPic = await addToy({ status: 'review', image_path: null });

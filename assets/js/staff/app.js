@@ -1,4 +1,5 @@
 import { supabase, configured, friendlyError } from '../db.js';
+import { setStorage } from '../lib.js';
 import { $, $$, toast, closePanel, keepFiles } from './ui.js';
 
 // Shared lookups every page uses, loaded once after sign-in.
@@ -26,6 +27,7 @@ export const shared = {
       supabase.from('boxes').select('*').order('created_at', { ascending: false }),
     ]);
     this.settings = s.data || {};
+    setStorage(this.settings);
     this.tiers = (t.data || []).map((x) => x.price);
     this.categories = (c.data || []).map((x) => x.name);
     this.boxes = b.data || [];
