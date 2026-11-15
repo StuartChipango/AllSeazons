@@ -2,7 +2,9 @@ import { esc, kwacha, AGES, AUDIENCES, CONDITIONS, effectivePrice, parseCsv, toC
 import { supabase, imageUrl, friendlyError } from '../db.js';
 import { shared, refreshBadges } from './app.js';
 import { $, $$, toast, openPanel, closePanel, confirmBox, seg, download, busy, dateLabel } from './ui.js';
-import { reframe, replacePhoto, deleteToyFiles, flipToy } from './photos.js';
+import { reframe, replacePhoto, deleteToyFiles, flipToy, framedBlob } from './photos.js';
+import { openAdjust } from './adjust.js';
+import { prefs } from './prefs.js';
 import { makeZip } from '../unzip.js';
 import { mediaHtml, wireMedia } from './media.js';
 
@@ -189,6 +191,7 @@ function edit(t) {
     <div class="field"><span>More photos and video for the shop page</span><div id="mediaBox">${mediaHtml(t)}</div></div>
     <div class="row-actions" style="justify-content:flex-start;margin-bottom:12px">
       <label class="btn ghost small">Replace photo<input type="file" accept="image/*" id="newPhoto" hidden></label>
+      ${t.image_path ? '<button type="button" class="btn ghost small" id="adjustPhoto" title="Zoom and move the photo inside the frame">✥ Adjust photo</button>' : ''}
       ${t.image_path ? '<button type="button" class="btn ghost small" id="flipPhoto" title="For photos where writing reads backwards">⇋ Flip photo</button>' : ''}
       ${t.status === 'available' ? '<button class="btn ghost small" id="sellOne">Sell in shop</button>' : ''}
     </div>
@@ -303,6 +306,12 @@ function edit(t) {
     busy(b, false);
   });
 
+  $('#adjustPhoto', body)?.addEventListener('click', () => openAdjust(t, (updated) => {
+    Object.assign(t, updated);
+    $('.preview', body).src = imageUrl(t.image_path);
+    load();
+  }));
+
   $('#sellOne', body)?.addEventListener('click', () => sellPanel([t]));
 
   $('#del', body).onclick = async () => {
@@ -368,12 +377,24 @@ async function socialPack(list, button) {
   try {
     const files = [];
     const captions = [];
+    // Best quality: each picture is drawn fresh from the original photo at
+    // 2160 x 2160 (frame, badge and name drawn sharp at that size). Toys with
+    // no original kept fall back to the saved 1080 picture.
+    const best = prefs().pack !== 'standard';
     for (const [i, t] of picks.entries()) {
-      const res = await fetch(imageUrl(t.image_path));
-      if (!res.ok) throw new Error(`The picture of ${t.name} could not be downloaded.`);
+      busy(button, true, `Making pack… ${i + 1}/${picks.length}`);
+      let data = null;
+      if (best && t.raw_path) {
+        try { data = new Uint8Array(await (await framedBlob(t, 2)).arrayBuffer()); } catch { data = null; }
+      }
+      if (!data) {
+        const res = await fetch(imageUrl(t.image_path));
+        if (!res.ok) throw new Error(`The picture of ${t.name} could not be downloaded.`);
+        data = new Uint8Array(await res.arrayBuffer());
+      }
       const num = String(i + 1).padStart(3, '0');
       const slug = t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-      files.push({ name: `${num}-${slug || 'toy'}.jpg`, data: new Uint8Array(await res.arrayBuffer()) });
+      files.push({ name: `${num}-${slug || 'toy'}.jpg`, data });
       const link = new URL(`../#${encodeURIComponent(t.code)}`, location.href).href;
       captions.push([`${num}. ${t.name}${t.tagline ? ` (${t.tagline})` : ''}`,
         `${kwacha(effectivePrice(t))} · ${CONDITIONS[t.condition]}${t.age_range ? ` · ${t.age_range} yrs` : ''}`,

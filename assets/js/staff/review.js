@@ -4,6 +4,7 @@ import { shared, refreshBadges } from './app.js';
 import { $, $$, toast, seg, confirmBox, busy } from './ui.js';
 import { reframe, replacePhoto, deleteToyFiles, relabel, flipToy } from './photos.js';
 import { mediaHtml, wireMedia } from './media.js';
+import { openAdjust } from './adjust.js';
 
 let root = null;
 let toys = [];
@@ -26,7 +27,8 @@ function card(t) {
   return `
     <article class="rcard ${t.needs_attention ? 'attn' : ''}" data-id="${t.id}">
       <div class="pic"><img src="${esc(imageUrl(t.image_path))}" alt="${esc(t.name)}" loading="lazy" decoding="async">
-        ${t.image_path ? '<button type="button" class="pic-flip" data-act="flip" aria-label="Flip photo: writing reads backwards">⇋ Flip</button>' : ''}</div>
+        ${t.image_path ? `<div class="pic-tools"><button type="button" class="pic-flip" data-act="adjust" aria-label="Adjust photo: zoom and move it in the frame">✥ Adjust</button>
+          <button type="button" class="pic-flip" data-act="flip" aria-label="Flip photo: writing reads backwards">⇋ Flip</button></div>` : ''}</div>
       <div class="body">
         ${t.image_path ? '' : '<label class="btn soft small">Add a photo<input type="file" accept="image/*" data-f="photo" hidden></label>'}
         ${flag ? `<div class="flag">${flag}</div>` : ''}
@@ -193,6 +195,11 @@ function wire() {
         el.querySelector('.working')?.remove();
       }
     });
+    el.querySelector('[data-act="adjust"]')?.addEventListener('click', () => openAdjust(t, (updated) => {
+      Object.assign(t, updated);
+      el.outerHTML = card(t);
+      wire();
+    }));
     el.querySelector('[data-act="ai"]')?.addEventListener('click', async (e) => {
       busy(e.target, true, 'AI is naming…');
       await retryAI(t, el);

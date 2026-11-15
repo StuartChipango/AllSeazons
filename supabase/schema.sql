@@ -177,6 +177,8 @@ alter table public.toys add column if not exists tagline text;
 -- Where the toy is in the photo, [left, top, right, bottom] as fractions,
 -- so the frame can fill the window without cutting the toy.
 alter table public.toys add column if not exists focus jsonb;
+-- The owner's own zoom and position of the photo in the frame ({zoom, cx, cy}); null = automatic.
+alter table public.toys add column if not exists framing jsonb;
 -- A Claude pack gave a cutout of the toy and a toy-free background (raw
 -- bucket: <id>-cut.png, <id>-plate.jpg), so it can pop out of the frame.
 alter table public.toys add column if not exists has_cutout boolean not null default false;

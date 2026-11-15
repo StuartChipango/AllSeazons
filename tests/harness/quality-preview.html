@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8"><title>Quality preview</title>
+<body style="margin:0;display:flex;flex-wrap:wrap;gap:8px;background:#ddd">
+<script type="module">
+// Shows the drawn frame, the new badge and the edge fill: auto placement,
+// zoomed-out manual framing (gaps filled) and the 2160 px export.
+import { renderFrame, renderPhoto, loadBitmap } from '../../assets/js/frame.js';
+const q = new URLSearchParams(location.search);
+const photo = q.get('photo') || '../fixtures/photos/toy1.jpg';
+const image = await loadBitmap(await (await fetch(photo)).blob());
+const scale = Number(q.get('scale') || 1);
+const add = (c) => { c.style.width = (q.get('w') || 360) + 'px'; document.body.append(c); };
+add(await renderFrame({ image, name: 'Spelling Game', tagline: 'Word', audience: 'boys', condition: 'used', scale }));
+add(await renderFrame({ image, name: 'Barbie Camper Van', audience: 'girls', condition: 'new', framing: { zoom: 0.62, cx: 0.5, cy: 0.5 }, scale }));
+add(await renderFrame({ image, name: 'Wooden Shape Sorter', audience: 'neutral', condition: 'used', focus: [0.1, 0.1, 0.9, 0.9], scale }));
+add(renderPhoto({ image, framing: { zoom: 0.6, cx: 0.5, cy: 0.45 } }));
+document.body.dataset.done = '1';
+</script>

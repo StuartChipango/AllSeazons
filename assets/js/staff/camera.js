@@ -23,7 +23,9 @@ const CONTROLS = [
   { key: 'zoom', label: 'Zoom', fmt: (v) => `${v.toFixed(1)}×` },
 ];
 
-export async function openCamera({ onShot, onClose = () => {} }) {
+// pro: show the manual controls. Off (the default) keeps the camera fully
+// automatic and natural: nothing saved from earlier is applied.
+export async function openCamera({ onShot, onClose = () => {}, pro = false }) {
   const root = document.createElement('div');
   root.className = 'cam';
   root.innerHTML = `
@@ -93,16 +95,32 @@ export async function openCamera({ onShot, onClose = () => {} }) {
 
   const caps = track.getCapabilities?.() || {};
   const imageCapture = 'ImageCapture' in window ? new ImageCapture(track) : null;
+  // Ask for the camera's biggest photo size (some phones default to less).
+  let photoSettings;
+  try {
+    const pc = await imageCapture?.getPhotoCapabilities();
+    if (pc?.imageWidth?.max) photoSettings = { imageWidth: pc.imageWidth.max, imageHeight: pc.imageHeight.max };
+  } catch { /* use the default size */ }
 
-  // Put back the settings used last time, where this camera allows them.
   const apply = async (c) => { try { await track.applyConstraints({ advanced: [c] }); return true; } catch { return false; } };
-  for (const ctl of CONTROLS) {
-    const v = saved[ctl.key];
-    if (v === undefined || !caps[ctl.key]) continue;
-    await apply(ctl.mode ? { [ctl.mode[0]]: ctl.mode[1], [ctl.key]: v } : { [ctl.key]: v });
+  if (pro) {
+    // Put back the settings used last time, where this camera allows them.
+    for (const ctl of CONTROLS) {
+      const v = saved[ctl.key];
+      if (v === undefined || !caps[ctl.key]) continue;
+      await apply(ctl.mode ? { [ctl.mode[0]]: ctl.mode[1], [ctl.key]: v } : { [ctl.key]: v });
+    }
+  } else {
+    // Natural: everything automatic, like the phone's own camera.
+    for (const ctl of CONTROLS) if (ctl.key !== 'zoom') delete saved[ctl.key];
+    const auto = {};
+    for (const m of ['exposureMode', 'focusMode', 'whiteBalanceMode']) if ((caps[m] || []).includes('continuous')) auto[m] = 'continuous';
+    if (caps.exposureCompensation) auto.exposureCompensation = 0;
+    if (Object.keys(auto).length) await apply(auto);
   }
 
-  const usable = CONTROLS.filter((c) => caps[c.key] && caps[c.key].max > caps[c.key].min
+  // Natural mode shows only zoom; manual mode shows every control the phone has.
+  const usable = CONTROLS.filter((c) => (pro || c.key === 'zoom') && caps[c.key] && caps[c.key].max > caps[c.key].min
     && (!c.mode || (caps[c.mode[0]] || []).includes(c.mode[1])));
   $('.cam-chips').innerHTML = usable.map((c) => `<button type="button" class="cam-chip" data-ctl="${c.key}">${esc(c.label)}<small></small></button>`).join('')
     || '<span class="cam-hint">Tap the picture to focus</span>';
@@ -208,9 +226,9 @@ export async function openCamera({ onShot, onClose = () => {} }) {
     if (imageCapture) {
       const view = looks(video, video.videoWidth, video.videoHeight);
       try {
-        const blob = await imageCapture.takePhoto();
+        const blob = await imageCapture.takePhoto(photoSettings).catch(() => imageCapture.takePhoto());
         if (blob?.size) {
-          if (saved.alwaysFlip) return canvasBlob(mirrored(await loadBitmap(blob)), 0.92);
+          if (saved.alwaysFlip) return canvasBlob(mirrored(await loadBitmap(blob)), 0.95);
           return (await unmirror(blob, view)) || blob;
         }
       } catch { /* fall back to a frame */ }
@@ -221,7 +239,7 @@ export async function openCamera({ onShot, onClose = () => {} }) {
     const ctx = c.getContext('2d');
     if (saved.alwaysFlip) { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
     ctx.drawImage(video, 0, 0);
-    return new Promise((res) => c.toBlob(res, 'image/jpeg', 0.92));
+    return new Promise((res) => c.toBlob(res, 'image/jpeg', 0.95));
   }
 
   let busy = false;
@@ -297,7 +315,7 @@ export async function unmirror(blob, view) {
     const dFlip = distance(flipped.g, view.g);
     // Only turn it round when the mirror image clearly matches better.
     if (!(dFlip < dSame * 0.8)) return null;
-    return canvasBlob(mirrored(await loadBitmap(blob)), 0.92);
+    return canvasBlob(mirrored(await loadBitmap(blob)), 0.95);
   } catch {
     return null;
   }

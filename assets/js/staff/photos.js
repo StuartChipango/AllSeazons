@@ -1,10 +1,24 @@
 // Turning a phone photo into the plain website photo and the framed social
 // media picture, automatically.
 import { supabase, imageUrl } from '../db.js';
-import { loadBitmap, toJpeg, canvasBlob, blobToBase64, renderFrame, renderPhoto, mirrored } from '../frame.js';
+import { loadBitmap, toJpeg, canvasBlob, blobToBase64, renderFrame, renderPhoto, mirrored, touchUp, shrinkTo } from '../frame.js';
+
+// The original photo is kept at up to 2560 px on its longest side (sharp
+// enough for the 2160 px social pictures, about 1 MB). Naming always works
+// from a small 512 px copy, so a bigger original never slows it down.
+const RAW_MAX = 2560;
+const RAW_QUALITY = 0.92;
 import { nameFromFile } from '../lib.js';
 
+// Recently used original photos, so redrawing a frame doesn't download them
+// again. Only the last few are kept: big photos fill a phone's memory fast.
 const bitmaps = new Map();
+const KEEP = 6;
+function remember(id, src) {
+  bitmaps.delete(id);
+  bitmaps.set(id, src);
+  while (bitmaps.size > KEEP) bitmaps.delete(bitmaps.keys().next().value);
+}
 
 async function functionError(error) {
   try {
@@ -51,12 +65,23 @@ export async function askAI(image) {
 // src: { image, cutout, plate } (cutout and plate come with Claude packs).
 async function uploadFramed(toyId, src, fields) {
   const canvas = await renderFrame({ ...src, name: fields.name, tagline: fields.tagline, audience: fields.audience,
-    condition: fields.condition, focus: fields.focus });
+    condition: fields.condition, focus: fields.focus, framing: fields.framing });
   return uploadCanvas(`${toyId}/${Date.now()}.jpg`, canvas);
 }
 
+// The social media picture made fresh from the original photo, for
+// downloading: scale 2 = 2160 x 2160 ("Best quality"), 1 = 1080 x 1080.
+export async function framedBlob(toy, scale = 2) {
+  const src = await sourceImage(toy, { keep: false });
+  const canvas = await renderFrame({ ...src, name: toy.name, tagline: toy.tagline, audience: toy.audience,
+    condition: toy.condition, focus: toy.focus, framing: toy.framing, scale });
+  const blob = await canvasBlob(canvas, scale > 1 ? 0.95 : 0.92);
+  canvas.width = canvas.height = 0; // let the phone free the memory now
+  return blob;
+}
+
 async function uploadCanvas(path, canvas) {
-  const blob = await canvasBlob(canvas, 0.86);
+  const blob = await canvasBlob(canvas, 0.92);
   const { error } = await supabase.storage.from('toys').upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000' });
   if (error) throw error;
   return path;
@@ -80,8 +105,8 @@ async function uploadThumb(toyId, canvas) {
   if (error) throw error;
   return path;
 }
-async function uploadPlain(toyId, src, focus) {
-  const canvas = renderPhoto({ ...src, focus });
+async function uploadPlain(toyId, src, focus, framing = null) {
+  const canvas = renderPhoto({ ...src, focus, framing });
   const [photo_path, thumb_path] = await Promise.all([
     uploadCanvas(`${toyId}/photo-${Date.now()}.jpg`, canvas),
     uploadThumb(toyId, canvas),
@@ -127,8 +152,11 @@ const cutPath = (id) => `${id}-cut.png`;
 const platePath = (id) => `${id}-plate.jpg`;
 export async function addToyFromPhoto(file, options, onStep = () => {}) {
   onStep('Preparing photo');
-  const image = await loadBitmap(file);
-  const raw = await toJpeg(image, 1600, 0.88);
+  const full = await loadBitmap(file);
+  // "Touch up" (off unless switched on): gentle brightness and colour fix.
+  // Either way the app works from a 2560 px copy, not the huge camera file.
+  const image = options.touchUp ? touchUp(full, RAW_MAX) : shrinkTo(full, RAW_MAX);
+  const raw = await toJpeg(image, RAW_MAX, RAW_QUALITY);
 
   const { data: toy, error } = await supabase.from('toys').insert({
     status: 'review',
@@ -188,7 +216,7 @@ export async function addToyFromPhoto(file, options, onStep = () => {}) {
       needs_attention: !labels || labels.confidence === 'low',
     });
     if (saveError) throw saveError;
-    bitmaps.set(toy.id, src);
+    remember(toy.id, src);
     return { toy: saved, aiError };
   } catch (e) {
     // Don't leave a half-made toy behind.
@@ -197,7 +225,7 @@ export async function addToyFromPhoto(file, options, onStep = () => {}) {
   }
 }
 
-async function sourceImage(toy) {
+export async function sourceImage(toy, { keep = true } = {}) {
   if (bitmaps.has(toy.id)) return bitmaps.get(toy.id);
   if (!toy.raw_path) throw new Error('This toy has no original photo. Use "Replace photo" to add one.');
   const get = async (path) => {
@@ -213,23 +241,36 @@ async function sourceImage(toy) {
       src.cutout = src.plate = null;
     }
   }
-  bitmaps.set(toy.id, src);
+  if (keep) remember(toy.id, src);
   return src;
 }
 
 // Redraw the frame after the name, group or condition changed.
 export async function reframe(toy, changes) {
-  const fields = { name: toy.name, tagline: toy.tagline, audience: toy.audience, condition: toy.condition, focus: toy.focus, ...changes };
+  const fields = { name: toy.name, tagline: toy.tagline, audience: toy.audience, condition: toy.condition, focus: toy.focus, framing: toy.framing ?? null, ...changes };
   const src = await sourceImage(toy);
   const imagePath = await uploadFramed(toy.id, src, fields);
   // Toys from before the website used plain photos get theirs now.
-  if (!toy.photo_path && !changes.photo_path) changes = { ...changes, ...(await uploadPlain(toy.id, src, fields.focus)) };
+  if (!toy.photo_path && !changes.photo_path) changes = { ...changes, ...(await uploadPlain(toy.id, src, fields.focus, fields.framing)) };
   const { data, error } = await saveToy(toy.id, { ...changes, image_path: imagePath });
   if (error) throw error;
   if (toy.image_path && toy.image_path !== imagePath) {
     supabase.storage.from('toys').remove([toy.image_path]).catch(() => {});
   }
   return data;
+}
+
+// The owner's own zoom and position from the "Adjust photo" screen (null =
+// back to automatic). Redoes the social picture and the website photo.
+// Returns the saved toy; remembered is false until the database update with
+// the framing column has been run (the pictures are still updated).
+export async function setFraming(toy, framing) {
+  const src = await sourceImage(toy);
+  const plain = await uploadPlain(toy.id, src, toy.focus, framing);
+  const saved = await reframe({ ...toy, framing }, { framing, ...plain });
+  const old = [toy.photo_path, toy.thumb_path].filter(Boolean);
+  if (old.length) supabase.storage.from('toys').remove(old).catch(() => {});
+  return { toy: { ...saved, framing }, remembered: !!saved && 'framing' in saved };
 }
 
 // More photos (made smaller) and videos of a toy, kept in toys.media as
@@ -278,14 +319,14 @@ export async function relabel(toy) {
 
 // A new photo for an existing toy (keeps its name and details).
 export async function replacePhoto(toy, file, { relabel = false } = {}) {
-  const image = await loadBitmap(file);
-  const raw = await toJpeg(image, 1600, 0.88);
+  const image = shrinkTo(await loadBitmap(file), RAW_MAX);
+  const raw = await toJpeg(image, RAW_MAX, RAW_QUALITY);
   const rawPath = `${toy.id}.jpg`;
   const up = await supabase.storage.from('raw').upload(rawPath, raw, { contentType: 'image/jpeg', upsert: true });
   if (up.error) throw up.error;
   // A new photo: the old cutout and toy position no longer match it.
-  bitmaps.set(toy.id, { image, cutout: null, plate: null });
-  let changes = { raw_path: rawPath, has_cutout: false, focus: null };
+  remember(toy.id, { image, cutout: null, plate: null });
+  let changes = { raw_path: rawPath, has_cutout: false, focus: null, framing: null };
   if (relabel) {
     const labels = await nameToy(image).catch(() => null);
     if (labels) {
@@ -314,7 +355,7 @@ export async function flipToy(toy) {
     src = { image: await loadBitmap(await res.blob()), cutout: null, plate: null };
   }
   const image = mirrored(src.image);
-  const raw = await toJpeg(image, 1600, 0.88);
+  const raw = await toJpeg(image, RAW_MAX, RAW_QUALITY);
   const rawPath = toy.raw_path || `${toy.id}.jpg`;
   const up = await supabase.storage.from('raw').upload(rawPath, raw, { contentType: 'image/jpeg', upsert: true, cacheControl: '60' });
   if (up.error) throw up.error;
@@ -332,12 +373,13 @@ export async function flipToy(toy) {
     ]);
     if (a.error || b.error) throw a.error || b.error;
   }
-  bitmaps.set(toy.id, next);
+  remember(toy.id, next);
   // Where the toy sits in the photo swaps sides too.
   const f = Array.isArray(toy.focus) && toy.focus.length === 4 ? toy.focus.map(Number) : null;
   const focus = f ? [1 - f[2], f[1], 1 - f[0], f[3]] : null;
-  const plain = await uploadPlain(toy.id, next, focus);
-  const saved = await reframe({ ...toy, raw_path: rawPath, focus }, { raw_path: rawPath, focus, has_cutout: !!next.cutout, ...plain });
+  const framing = toy.framing ? { ...toy.framing, cx: 1 - Number(toy.framing.cx) } : null;
+  const plain = await uploadPlain(toy.id, next, focus, framing);
+  const saved = await reframe({ ...toy, raw_path: rawPath, focus, framing }, { raw_path: rawPath, focus, framing, has_cutout: !!next.cutout, ...plain });
   const old = [toy.photo_path, toy.thumb_path].filter(Boolean);
   if (old.length) supabase.storage.from('toys').remove(old).catch(() => {});
   return saved;

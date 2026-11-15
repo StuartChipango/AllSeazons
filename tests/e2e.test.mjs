@@ -117,6 +117,36 @@ test('a mirrored photo is flipped back from the review card', async () => {
   assert.ok(diff.same > diff.mirrored * 2, `flipped photo should differ from the old one (${JSON.stringify(diff)})`);
 });
 
+test('the owner zooms and moves a photo inside the frame by hand', async () => {
+  const card = staff.locator('.rcard', { has: staff.locator('[data-f=name][value="Big Brown Teddy"]') });
+  const id = await card.getAttribute('data-id');
+  const before = await card.locator('.pic img').getAttribute('src');
+  await card.getByRole('button', { name: /Adjust photo/ }).click();
+  const dlg = staff.locator('dialog.adjust');
+  await dlg.locator('.adj-wait').waitFor({ state: 'detached' });
+  // Drag the photo to the right, then zoom out with the slider.
+  const box = await dlg.locator('canvas').boundingBox();
+  await staff.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await staff.mouse.down();
+  await staff.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2, { steps: 4 });
+  await staff.mouse.up();
+  await dlg.locator('input[type=range]').evaluate((r) => { r.value = '70'; r.dispatchEvent(new Event('input', { bubbles: true })); });
+  await staff.waitForFunction(() => document.querySelector('dialog.adjust .adj-val')?.textContent === '70%');
+  await shot(staff, '07-adjust-photo');
+  await dlg.getByRole('button', { name: 'Save' }).click();
+  await dlg.waitFor({ state: 'detached' });
+  await staff.waitForFunction(([id, src]) => {
+    const c = document.querySelector(`.rcard[data-id="${id}"]`);
+    return c && c.querySelector('.pic img').getAttribute('src') !== src;
+  }, [id, before]);
+  const pg = new (require('pg').Client)({ connectionString: h.dbUrl });
+  await pg.connect();
+  const row = (await pg.query('select framing from toys where id = $1', [id])).rows[0];
+  await pg.end();
+  assert.equal(row.framing.zoom, 0.7);
+  assert.ok(row.framing.cx < 0.5, `moving right shows more of the left side (${JSON.stringify(row.framing)})`);
+});
+
 test('the camera turns a mirrored photo back by comparing it with the live picture', async () => {
   const result = await staff.evaluate(async () => {
     const { looks, unmirror } = await import('../assets/js/staff/camera.js');
@@ -325,7 +355,16 @@ test('stock page downloads a social media pack of framed pictures', async () => 
   assert.ok(names.includes('captions.txt'));
   assert.ok(names.some((n) => /^001-.+\.jpg$/.test(n)), names.join(' '));
   const captions = execSync(`python3 -c "import zipfile,sys;print(zipfile.ZipFile(sys.argv[1]).read('captions.txt').decode())" ${file}`).toString();
-  assert.match(captions, /Order: http.+#/);
+  assert.match(captions, /Order: http.+#/);  // Best quality (the default): pictures are 2160 x 2160.
+  const size = execSync(`python3 -c "
+import zipfile,sys,struct
+d=zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]);i=2
+while i<len(d):
+  m=d[i+1];l=struct.unpack('>H',d[i+2:i+4])[0]
+  if m in (0xC0,0xC2): print(struct.unpack('>HH',d[i+5:i+9]));break
+  i+=2+l
+" ${file} ${names.find((n) => /^001-/.test(n))}`).toString().trim();
+  assert.equal(size, '(2160, 2160)');
 });
 
 test('toys the AI could not name get another try', async () => {
@@ -553,6 +592,21 @@ test('on a phone: bottom tabs, the + sheet, a shop sale and a WhatsApp order', a
   assert.match(link.searchParams.get('text'), /MTN Money to 0762750240/);
   await shot(phone, '33-phone-wa-order');
 
+  // By default Snap opens the phone's own camera app (a file picker with
+  // capture), so photos look natural.
+  await phone.goto(`${h.url}/staff/#upload`);
+  const chooser = phone.waitForEvent('filechooser');
+  await phone.locator('#shootBtn').click();
+  const picker = await chooser;
+  assert.equal(await picker.element().getAttribute('capture'), 'environment');
+  await picker.setFiles(photo('toy3.jpg'));
+  await phone.getByText(/1 of 1 ready/).waitFor({ timeout: 30000 });
+
+  // The quick camera inside the app, chosen under More options.
+  await phone.locator('#moreOpts summary').click();
+  await phone.locator('[data-seg="camera"][data-value="app"]').click();
+  assert.equal(await phone.evaluate(() => JSON.parse(localStorage.getItem('picture-prefs')).camera), 'app');
+  assert.equal(await phone.locator('[data-seg="pro"][data-value="off"]').getAttribute('aria-pressed'), 'true', 'manual controls are off unless chosen');
   await ctx.grantPermissions(['camera']);
   await phone.goto(`${h.url}/staff/#home`);
   await phone.click('#plusBtn');
@@ -565,7 +619,7 @@ test('on a phone: bottom tabs, the + sheet, a shop sale and a WhatsApp order', a
   await phone.getByRole('button', { name: 'Done' }).click();
   await phone.locator('.cam').waitFor({ state: 'detached' });
   await phone.locator('.queue li').first().waitFor();
-  await phone.getByText(/1 of 1 ready/).waitFor({ timeout: 30000 });
+  await phone.getByText(/2 of 2 ready/).waitFor({ timeout: 30000 });
   await phone.locator('.shutter').waitFor();
   assert.equal(await phone.locator('.side').isVisible(), false, 'the shutter bar replaces the tabs');
   await shot(phone, '34-phone-snap');
