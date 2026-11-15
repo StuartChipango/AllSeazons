@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   kwacha, waNumber, waLink, parcelSize, courierFee, orderMessage, priceBands, parseCsv, toCsv,
   legacyRowToToy, nameFromFile, effectivePrice, isSpecial, deliveryLine, packLabels, labelKey, parseFocus,
+  storagePolicy, upsellPicks,
 } from '../assets/js/lib.js';
 
 test('kwacha amounts', () => {
@@ -61,6 +62,23 @@ test('the WhatsApp order message is clearly labelled', () => {
   assert.match(m, /\*Address:\* Mazhandu Kitwe branch/);
   assert.match(m, /\*Pictures of my toys:\* https:\/\/shop\.example\/order\.html\?o=ORD-1042&k=abc/);
   assert.match(m, /Held for me until 21:30/);
+});
+
+test('the 72-hour storage rule is in pickup and Yango orders, not courier ones', () => {
+  assert.doesNotMatch(orderMessage(order, ''), /storage fee/);
+  const m = orderMessage({ ...order, delivery_method: 'pickup', location: 'lusaka' }, '');
+  assert.match(m, /keep your toys for 72 hours[\s\S]*K10 per toy for every day/);
+  assert.match(storagePolicy(true), /72 hours[\s\S]*K10 a day per toy/);
+});
+
+test('checkout suggests toys like the ones picked, cheapest first', () => {
+  const toy = (id, category, age_range, price, extra = {}) => ({ id, category, age_range, price, audience: 'boys', status: 'available', ...extra });
+  const toys = [
+    toy('a', 'Cars', '3-5', 100), toy('b', 'Cars', '3-5', 70), toy('c', 'Cars', '3-5', 50),
+    toy('d', 'Dolls', '9+', 30, { audience: 'girls' }), toy('e', 'Cars', '3-5', 50, { status: 'reserved' }),
+  ];
+  assert.deepEqual(upsellPicks(toys, ['a']).map((t) => t.id), ['c', 'b', 'd']);
+  assert.deepEqual(upsellPicks(toys, ['a'], 1).map((t) => t.id), ['c']);
 });
 
 test('delivery wording for each method', () => {

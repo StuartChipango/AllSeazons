@@ -29,6 +29,33 @@ export function kwacha(n) {
 }
 
 export const effectivePrice = (toy) => (toy.sale_price ?? null) !== null ? toy.sale_price : toy.price;
+// Paid toys are kept for a while, then a small storage fee per toy per day.
+export const STORAGE = { hours: 72, feePerDay: 10 };
+export const storagePolicy = (short = false) => short
+  ? `Collect within ${STORAGE.hours} hours of paying. After that, ${kwacha(STORAGE.feePerDay)} a day per toy for storage.`
+  : `After you pay, we keep your toys for ${STORAGE.hours} hours (3 days). After that we charge a storage fee of ${kwacha(STORAGE.feePerDay)} per toy for every day they are not collected.`;
+// "Add one more?" at checkout: toys like the ones already picked (same
+// type, age and boy/girl), cheapest first, never one already in the order.
+export function upsellPicks(toys, cartIds, limit = 8) {
+  const ids = new Set(cartIds);
+  const picked = toys.filter((t) => ids.has(t.id));
+  const cats = new Set(picked.map((t) => t.category).filter(Boolean));
+  const ages = new Set(picked.map((t) => t.age_range).filter(Boolean));
+  const auds = new Set(picked.map((t) => t.audience));
+  const top = Math.max(0, ...picked.map(effectivePrice));
+  const score = (t) => (cats.has(t.category) ? 3 : 0) + (ages.has(t.age_range) ? 2 : 0)
+    + (auds.has(t.audience) || t.audience === 'neutral' ? 1 : 0) + (effectivePrice(t) <= top ? 1 : 0);
+  return toys
+    .filter((t) => t.status === 'available' && !ids.has(t.id))
+    .map((t) => ({ t, s: score(t) }))
+    .sort((a, b) => b.s - a.s || effectivePrice(a.t) - effectivePrice(b.t))
+    .slice(0, limit)
+    .map((x) => x.t);
+}
+
+// Courier parcels are sent out; pickup and Yango orders wait at the shop.
+export const waitsAtShop = (method) => method !== 'courier';
+
 export const isSpecial = (toy) => Boolean(toy.is_special) || ((toy.sale_price ?? null) !== null && toy.sale_price < toy.price);
 
 // Parcel size from the number of items, using the shop's settings.
@@ -115,6 +142,10 @@ export function orderMessage(order, picturesUrl) {
     lines.push(`*Pictures of my toys:* ${picturesUrl}`);
   }
   if (order.hold_until) lines.push(`(Held for me until ${timeLabel(order.hold_until)})`);
+  if (waitsAtShop(order.delivery_method)) {
+    lines.push('');
+    lines.push(`_${storagePolicy()}_`);
+  }
   return lines.join('\n');
 }
 
