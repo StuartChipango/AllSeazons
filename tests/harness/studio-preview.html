@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8"><title>Post templates preview</title>
+<link rel="stylesheet" href="../../assets/css/base.css">
+<body style="margin:0;display:flex;flex-wrap:wrap;gap:8px;background:#ddd">
+<script type="module">
+import { loadStudioAssets, renderPage } from '../../assets/js/studio/render.js';
+import { makePages } from '../../assets/js/studio/templates.js';
+import { loadBitmap } from '../../assets/js/frame.js';
+const images = await loadStudioAssets();
+const photos = ['toy1.jpg', 'toy2.jpg', 'toy3.jpg'];
+for (const [i, p] of photos.entries()) images.set(`t${i}`, await loadBitmap(await (await fetch(`../fixtures/photos/${p}`)).blob()));
+const toys = [
+  { src: 't0', name: 'Wooden Shape Sorter', old: 'K120', now: 'K90' },
+  { src: 't1', name: 'Teddy Bear', old: 'K80', now: 'K60' },
+  { src: 't2', name: 'Monster Truck', old: 'K100', now: 'K75' },
+];
+const base = { site: 'allseazons.shop', wa: '0762 750 240' };
+const q = new URLSearchParams(location.search);
+const sets = JSON.parse(q.get('sets') || '[]');
+const px = Number(q.get('px') || 540);
+for (const [family, opts] of sets) {
+  const pages = makePages(family, { ...base, ...opts, toys: toys.slice(0, opts.n ?? 0) });
+  for (const pg of pages) { const c = renderPage(pg, images, px); c.style.width = (q.get('w') || 360) + 'px'; document.body.append(c); }
+}
+document.body.dataset.done = '1';
+</script>
