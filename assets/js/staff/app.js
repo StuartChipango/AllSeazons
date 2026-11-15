@@ -1,5 +1,10 @@
 import { supabase, configured, friendlyError } from '../db.js';
 import { $, $$, toast, closePanel, keepFiles } from './ui.js';
+import { setPostAction } from './sendpics.js';
+import { bufferAction } from './buffer.js';
+
+// Pictures ready screens get a "Post with Buffer" button in the staff app.
+setPostAction(bufferAction);
 
 // Shared lookups every page uses, loaded once after sign-in.
 export const ROLE_LABELS = { owner: 'Owner', stock: 'Stock', sales: 'Sales' };

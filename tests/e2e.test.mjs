@@ -363,26 +363,60 @@ test('a Claude pack adds named toys without the AI', async () => {
   assert.equal(await pony.locator('.pic img').evaluate((i) => i.naturalWidth), 1080);
 });
 
-test('stock page downloads a social media pack of framed pictures', async () => {
+test('stock page makes a social media pack of separate framed pictures (no zip)', async () => {
   await staff.goto(`${h.url}/staff/#stock`);
   await staff.locator('#fStatus').selectOption('');
   await staff.locator('.item-row').first().waitFor();
-  const [dl] = await Promise.all([staff.waitForEvent('download'), staff.locator('#socialPack').click()]);
+  await staff.locator('#socialPack').click();
+  await staff.locator('.sp-grid').waitFor({ timeout: 60000 });
+  const captions = await staff.locator('[data-caption]').inputValue();
+  assert.match(captions, /Order: http.+#/);
+  const [dl] = await Promise.all([staff.waitForEvent('download'), staff.locator('[data-one="0"]').click()]);
+  assert.match(dl.suggestedFilename(), /^allseazons-001-.+\.jpg$/);
   const file = await dl.path();
-  const names = JSON.parse(execSync(`python3 -c "import zipfile,sys,json;z=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None;print(json.dumps(z.namelist()))" ${file}`).toString());
-  assert.ok(names.includes('captions.txt'));
-  assert.ok(names.some((n) => /^001-.+\.jpg$/.test(n)), names.join(' '));
-  const captions = execSync(`python3 -c "import zipfile,sys;print(zipfile.ZipFile(sys.argv[1]).read('captions.txt').decode())" ${file}`).toString();
-  assert.match(captions, /Order: http.+#/);  // Best quality (the default): pictures are 2160 x 2160.
+  // Best quality (the default): pictures are 2160 x 2160 JPEGs.
   const size = execSync(`python3 -c "
-import zipfile,sys,struct
-d=zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]);i=2
+import sys,struct
+d=open(sys.argv[1],'rb').read();i=2
 while i<len(d):
   m=d[i+1];l=struct.unpack('>H',d[i+2:i+4])[0]
   if m in (0xC0,0xC2): print(struct.unpack('>HH',d[i+5:i+9]));break
   i+=2+l
-" ${file} ${names.find((n) => /^001-/.test(n))}`).toString().trim();
+" ${file}`).toString().trim();
   assert.equal(size, '(2160, 2160)');
+  await staff.keyboard.press('Escape');
+});
+
+test('Post with Buffer sends the pack to Facebook, Instagram and TikTok', async () => {
+  await staff.goto(`${h.url}/staff/#stock`);
+  await staff.locator('#fStatus').selectOption('');
+  await staff.locator('.item-row').first().waitFor();
+  await staff.locator('#socialPack').click();
+  await staff.locator('.sp-grid').waitFor({ timeout: 60000 });
+  // Not linked yet: the staff see the setup steps, not an error.
+  h.buffer.key = null;
+  await staff.locator('[data-extra]').click();
+  await staff.getByRole('heading', { name: 'Link Buffer first' }).waitFor();
+  h.buffer.key = 'buf_test';
+  await staff.keyboard.press('Escape');
+  await staff.locator('#socialPack').click();
+  await staff.locator('[data-extra]').click({ timeout: 60000 });
+  await staff.locator('.bf-ch').first().waitFor();
+  assert.equal(await staff.locator('.bf-ch input:checked').count(), 3);
+  const pics = await staff.locator('.bf-pic[aria-pressed="true"]').count();
+  assert.ok(pics >= 1 && pics <= 10);
+  await staff.locator('[data-go]').click();
+  await staff.locator('.bf-r').nth(2).waitFor({ timeout: 30000 });
+  assert.equal(await staff.locator('.bf-r.ok').count(), 3, await staff.locator('[data-results]').innerText());
+  assert.equal(h.buffer.posts.length, 3);
+  const [fb, ig, tt] = ['ch-fb', 'ch-ig', 'ch-tt'].map((id) => h.buffer.posts.find((x) => x.channelId === id));
+  assert.equal(fb.assets.length, pics);
+  assert.match(fb.text, /Order: http/);
+  assert.equal(fb.mode, 'shareNow');
+  assert.equal(ig.metadata.instagram.shouldShareToFeed, true);
+  assert.ok(tt.metadata.tiktok.title);
+  assert.match(fb.assets[0].image.url, /\/storage\/v1\/object\/public\/social\//);
+  await staff.keyboard.press('Escape');
 });
 
 test('toys the AI could not name get another try', async () => {
