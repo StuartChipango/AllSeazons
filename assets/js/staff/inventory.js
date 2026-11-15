@@ -179,7 +179,17 @@ export function sellPanel(picked, done = load) {
     const { data, error } = await supabase.rpc('shop_sale', {
       p_items: items, p_customer_name: $('#saleName', body).value, p_phone: $('#salePhone', body).value,
     });
-    if (error) { busy(e.target, false); return toast(friendlyError(error), true); }
+    if (error) {
+      busy(e.target, false);
+      // A toy went to an online order a moment ago: flag that order so the
+      // same toy is not sold (and counted) twice.
+      if (error.hint === 'unavailable') {
+        const ids = String(error.details || '').split(',').filter(Boolean);
+        const { data: hit } = ids.length ? await supabase.rpc('flag_toy_conflict', { p_toys: ids, p_note: 'Also sold in the shop' }) : { data: [] };
+        if (hit?.length) return toast(`Not recorded: ${friendlyError(error)} It belongs to ${hit.map((o) => `${o.code} ${o.customer_name}`).join(', ')}, now flagged on Home.`, true);
+      }
+      return toast(friendlyError(error), true);
+    }
     toast(`Sale ${data.code} recorded: ${kwacha(data.total)}`);
     closePanel();
     selected.clear();

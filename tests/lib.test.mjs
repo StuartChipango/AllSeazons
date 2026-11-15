@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   kwacha, waNumber, waLink, parcelSize, courierFee, orderMessage, priceBands, parseCsv, toCsv,
   legacyRowToToy, nameFromFile, effectivePrice, isSpecial, deliveryLine, packLabels, labelKey, parseFocus,
-  storagePolicy, upsellPicks,
+  storagePolicy, upsellPicks, setStorage, waitLabel, reminderMessage, teamReport,
 } from '../assets/js/lib.js';
 
 test('kwacha amounts', () => {
@@ -184,4 +184,30 @@ test('traffic sources: tracked links, referrers and in-app browsers', async () =
   assert.equal(sourceFromTag('fb-christmas'), 'facebook');
   assert.equal(trackedLink('https://allseazons.shop/#ABC', 'wa-status'), 'https://allseazons.shop/?src=wa-status');
   assert.equal(trackedLink('https://allseazons.shop/', 'fb', 'Easter Toys!'), 'https://allseazons.shop/?src=fb&c=easter-toys');
+});
+
+test('storage reminders and the team report', () => {
+  assert.equal(waitLabel(5), '5 h');
+  assert.equal(waitLabel(24), '1 day');
+  assert.equal(waitLabel(77), '3 days 5 h');
+  const o = { code: 'ORD-1009', customer_name: 'Jane Banda', delivery_method: 'pickup' };
+  assert.match(reminderMessage(o, 'remind'), /^Hi Jane! .*ORD-1009 is packed and waiting for you to collect/);
+  const n = reminderMessage(o, 'notice', { hours: 72, toys: 2, per_day: 20 });
+  assert.match(n, /free for 72 hours/);
+  assert.match(n, /K10 per toy per day/);
+  assert.match(n, /K20 a day for your order/);
+  assert.match(reminderMessage(o, 'fee', { hours: 120, fee: 40, per_day: 20 }), /Storage so far: K40, going up K20 a day/);
+  setStorage({ storage_free_hours: 48, storage_fee: 15, storage_fee_per: 'order' });
+  assert.match(storagePolicy(), /48 hours \(2 days\).*K15 per order/);
+  setStorage({ storage_free_hours: 72, storage_fee: 10, storage_fee_per: 'toy' });
+  const r = teamReport({
+    day: 'Sun 15 Nov',
+    sales: [{ channel: 'shop', total: 100 }, { channel: 'online', total: 250 }],
+    done: [{ code: 'ORD-1', customer_name: 'Ann', storage_fee: 20 }],
+    alerts: [{ text: 'ORD-2 waiting 5 days' }],
+  });
+  assert.match(r, /Sales today: K350\* \(2 orders\)/);
+  assert.match(r, /Shop: 1 · K100/);
+  assert.match(r, /ORD-1 Ann \(storage K20\)/);
+  assert.match(r, /Needs attention: 1\*\n- ORD-2 waiting 5 days/);
 });
