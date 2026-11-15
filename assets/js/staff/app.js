@@ -42,10 +42,11 @@ const pages = {
   settings: () => import('./settings.js'),
   sale: () => import('./sale.js'),
   traffic: () => import('./traffic.js'),
+  studio: () => import('./studio.js'),
 };
 
 // Which job each page needs (null = everyone).
-const NEEDS = { home: null, upload: 'stock', review: 'stock', stock: 'stock', boxes: 'stock', orders: 'sales', sale: 'sales', settings: null, traffic: 'owner' };
+const NEEDS = { home: null, upload: 'stock', review: 'stock', stock: 'stock', boxes: 'stock', orders: 'sales', sale: 'sales', settings: null, traffic: 'owner', studio: null };
 const allowed = (name) => !NEEDS[name] || can(NEEDS[name]);
 
 let current = null;

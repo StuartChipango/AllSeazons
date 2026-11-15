@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Make a post (preview)</title>
+<link rel="stylesheet" href="../../assets/css/base.css">
+<link rel="stylesheet" href="../../assets/css/staff.css">
+</head>
+<body>
+<!-- The staff app's "Make a post" page with made-up toys, no sign-in. -->
+<div class="app"><main class="main" id="main"></main></div>
+<script type="module">
+import { mount } from '../../assets/js/studio/editor.js';
+const toys = [
+  ['Wooden Shape Sorter', 120, null, 'toy1.jpg'], ['Teddy Bear', 80, 60, 'toy2.jpg'], ['Monster Truck', 100, null, 'toy3.jpg'],
+  ['Stacking Blocks', 70, null, 'toy1.jpg'], ['Barbie Camper', 150, null, 'toy2.jpg'],
+].map(([name, price, sale_price, file], i) => ({ id: `t${i}`, code: `AS-${100 + i}`, name, price, sale_price, thumb: `../fixtures/photos/${file}`, file }));
+await mount(document.getElementById('main'), {
+  loadToys: async () => toys,
+  toyImage: async (t) => (await fetch(`../fixtures/photos/${t.file}`)).blob(),
+  settings: { whatsapp_number: '260762750240' },
+});
+document.body.dataset.ready = '1';
+</script>
+</body></html>
