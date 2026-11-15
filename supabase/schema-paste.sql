@@ -974,6 +974,12 @@ with check (bucket_id in ('toys', 'raw') and public.has_role('stock'));
 drop policy if exists "staff see toy photos" on storage.objects;
 create policy "staff see toy photos" on storage.objects for select to authenticated
 using (bucket_id in ('toys', 'raw') and public.is_staff());
+insert into storage.buckets (id, name, public) values ('social', 'social', true)
+on conflict (id) do update set public = true;
+drop policy if exists "staff send social pictures" on storage.objects;
+create policy "staff send social pictures" on storage.objects for all to authenticated
+using (bucket_id = 'social' and public.is_staff())
+with check (bucket_id = 'social' and public.is_staff());
 do $$
 begin
 if exists (select 1 from pg_publication where pubname = 'supabase_realtime')

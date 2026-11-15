@@ -131,6 +131,60 @@ const LABELS = [
   { name: 'Stacking Blocks Set', brand: '', audience: 'neutral', condition: 'new', category: 'Building & Blocks', age_range: '0-2', description: 'Bright blocks to stack and sort.', confidence: 'medium' },
 ];
 
+// "Post with Buffer": the real Edge Function (supabase/functions/buffer-post)
+// runs here with Deno stubbed, talking to a pretend Buffer API that keeps
+// every post it gets in h.buffer.posts. h.buffer.key = null means not linked.
+const buffer = { key: 'buf_test', posts: [], channels: [
+  { id: 'ch-fb', name: 'allseazonsplay', displayName: 'All Seazons Play', service: 'facebook', avatar: '' },
+  { id: 'ch-ig', name: 'allseazons.play', displayName: 'allseazons.play', service: 'instagram', avatar: '' },
+  { id: 'ch-tt', name: 'allseazons', displayName: 'allseazons', service: 'tiktok', avatar: '' },
+] };
+let bufferHandler = null;
+async function loadBufferFunction() {
+  if (bufferHandler) return bufferHandler;
+  const { stripTypeScriptTypes } = await import('node:module');
+  let src = readFileSync(join(ROOT, 'supabase/functions/buffer-post/index.ts'), 'utf8');
+  src = src.replace(/^import \{ createClient \} from "npm:@supabase\/supabase-js@[^"]+";$/m, 'const { createClient } = globalThis.__bufferStubs;');
+  globalThis.__bufferStubs = {
+    createClient: (_u, _k, opts) => ({
+      rpc: async (fn) => {
+        const claims = bearerClaims({ headers: { authorization: opts.global.headers.Authorization } });
+        return { data: fn === 'is_staff' && claims?.role === 'authenticated' };
+      },
+    }),
+  };
+  globalThis.Deno = {
+    env: { get: (k) => ({ SUPABASE_URL: 'http://x', SUPABASE_ANON_KEY: 'x', BUFFER_API_KEY: buffer.key, BUFFER_API_URL: `http://localhost:${PORT}/buffer-api` })[k] ?? undefined },
+    serve: (h) => { bufferHandler = h; },
+  };
+  await import(`data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(src)).toString('base64')}`);
+  return bufferHandler;
+}
+async function bufferFunction(req, res) {
+  const handler = await loadBufferFunction();
+  const body = ['GET', 'HEAD'].includes(req.method) ? undefined : await readBody(req);
+  const out = await handler(new Request(`http://localhost${req.url}`, { method: req.method, headers: req.headers, body }));
+  res.writeHead(out.status, Object.fromEntries(out.headers));
+  res.end(Buffer.from(await out.arrayBuffer()));
+}
+async function fakeBufferApi(req, res) {
+  if (req.headers.authorization !== `Bearer ${buffer.key}`) return send(res, 401, { errors: [{ message: 'Not authorized' }] });
+  const { query, variables } = JSON.parse((await readBody(req)).toString());
+  if (query.includes('organizations')) return send(res, 200, { data: { account: { organizations: [{ id: 'org1', name: 'All Seazons' }] } } });
+  if (query.includes('channels(')) return send(res, 200, { data: { channels: buffer.channels } });
+  if (query.includes('createPost')) {
+    const input = variables.input;
+    // Buffer fetches every picture by its public link.
+    for (const a of input.assets) {
+      const r = await fetch(a.image.url);
+      if (!r.ok) return send(res, 200, { data: { createPost: { message: `Failed to fetch image dimensions: ${r.statusText}` } } });
+    }
+    buffer.posts.push(input);
+    return send(res, 200, { data: { createPost: { post: { id: `post-${buffer.posts.length}` } } } });
+  }
+  return send(res, 200, { errors: [{ message: 'Unknown query' }] });
+}
+
 async function handle(req, res, url) {
   const p = url.pathname;
   if (req.method === 'OPTIONS') return send(res, 204, '');
@@ -182,7 +236,7 @@ async function handle(req, res, url) {
     if (rest.startsWith('public/')) {
       rest = rest.slice(7);
       const file = join(STORE, normalize(rest));
-      if (!rest.startsWith('toys/') || !existsSync(file)) return send(res, 404, { message: 'Not found' });
+      if (!(rest.startsWith('toys/') || rest.startsWith('social/')) || !existsSync(file)) return send(res, 404, { message: 'Not found' });
       res.writeHead(200, { ...cors, 'Content-Type': 'image/jpeg' });
       return createReadStream(file).pipe(res);
     }
@@ -226,6 +280,9 @@ async function handle(req, res, url) {
     return send(res, 200, { labels });
   }
 
+  if (p === '/functions/v1/buffer-post') return bufferFunction(req, res);
+  if (p === '/buffer-api') return fakeBufferApi(req, res);
+
   if (p.startsWith('/realtime/')) return send(res, 404, { message: 'Realtime is not available locally' });
 
   // Static files.
@@ -254,6 +311,7 @@ export async function startHarness({ reset = true } = {}) {
     dbUrl: DB_URL,
     staff: STAFF,
     ai,
+    buffer,
     async stop() {
       server.close();
       pgrst.kill();

@@ -387,6 +387,38 @@ while i<len(d):
   await staff.keyboard.press('Escape');
 });
 
+test('Post with Buffer sends the pack to Facebook, Instagram and TikTok', async () => {
+  await staff.goto(`${h.url}/staff/#stock`);
+  await staff.locator('#fStatus').selectOption('');
+  await staff.locator('.item-row').first().waitFor();
+  await staff.locator('#socialPack').click();
+  await staff.locator('.sp-grid').waitFor({ timeout: 60000 });
+  // Not linked yet: the staff see the setup steps, not an error.
+  h.buffer.key = null;
+  await staff.locator('[data-extra]').click();
+  await staff.getByRole('heading', { name: 'Link Buffer first' }).waitFor();
+  h.buffer.key = 'buf_test';
+  await staff.keyboard.press('Escape');
+  await staff.locator('#socialPack').click();
+  await staff.locator('[data-extra]').click({ timeout: 60000 });
+  await staff.locator('.bf-ch').first().waitFor();
+  assert.equal(await staff.locator('.bf-ch input:checked').count(), 3);
+  const pics = await staff.locator('.bf-pic[aria-pressed="true"]').count();
+  assert.ok(pics >= 1 && pics <= 10);
+  await staff.locator('[data-go]').click();
+  await staff.locator('.bf-r').nth(2).waitFor({ timeout: 30000 });
+  assert.equal(await staff.locator('.bf-r.ok').count(), 3, await staff.locator('[data-results]').innerText());
+  assert.equal(h.buffer.posts.length, 3);
+  const [fb, ig, tt] = ['ch-fb', 'ch-ig', 'ch-tt'].map((id) => h.buffer.posts.find((x) => x.channelId === id));
+  assert.equal(fb.assets.length, pics);
+  assert.match(fb.text, /Order: http/);
+  assert.equal(fb.mode, 'shareNow');
+  assert.equal(ig.metadata.instagram.shouldShareToFeed, true);
+  assert.ok(tt.metadata.tiktok.title);
+  assert.match(fb.assets[0].image.url, /\/storage\/v1\/object\/public\/social\//);
+  await staff.keyboard.press('Escape');
+});
+
 test('toys the AI could not name get another try', async () => {
   h.ai.down = true;
   await staff.goto(`${h.url}/staff/#upload`);

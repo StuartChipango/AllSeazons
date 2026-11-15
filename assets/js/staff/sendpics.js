@@ -10,6 +10,11 @@ import { esc } from '../lib.js';
 import { toast, openPanel } from './ui.js';
 
 const MAX_FILES = 10;
+
+// The staff app adds "Send to Buffer" here (buffer.js); previews without
+// sign-in leave it out.
+let extra = null;
+export function setPostAction(action) { extra = action; }
 const MAX_BYTES = 45 * 1024 * 1024;
 
 export function batches(files) {
@@ -71,8 +76,9 @@ export function showReady(files, { caption = '', title } = {}) {
       <p class="muted sp-hint">Tap Share, then pick <b>Facebook</b> (or Business Suite, WhatsApp, Instagram). To post on the shop's Page, choose the Page as the one posting.</p>
       <div class="sp-actions">${groups.map((g, i) => `<button class="btn block sp-share" data-share="${i}">${esc(label(g, i))}</button>`).join('')}</div>`
     : `<p class="muted sp-hint">This browser cannot share pictures straight to other apps. Save them, then add them from the gallery.</p>`}
+    ${extra ? `<div class="sp-actions"><button class="btn block sp-buffer" data-extra>${esc(extra.label)}</button><small class="muted">${esc(extra.hint || '')}</small></div>` : ''}
     <div class="sp-actions">
-      <button class="btn block ${share ? 'ghost' : ''}" data-save>Save ${n > 1 ? `all ${n} ` : ''}to the phone</button>
+      <button class="btn block ${share || extra ? 'ghost' : ''}" data-save>Save ${n > 1 ? `all ${n} ` : ''}to the phone</button>
     </div>
     <p class="muted sp-hint">Tap one picture to save just that one.</p>
     <div class="sp-grid">${files.map((f, i) => `
@@ -120,5 +126,6 @@ export function showReady(files, { caption = '', title } = {}) {
     b.classList.add('done');
   }));
   body.querySelector('[data-copy]')?.addEventListener('click', () => copyText(text()));
+  body.querySelector('[data-extra]')?.addEventListener('click', () => extra.run(files, text()));
   return body;
 }

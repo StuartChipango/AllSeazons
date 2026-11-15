@@ -43,6 +43,19 @@ This uses your normal Claude account, so there is nothing to pay for per photo.
 
 You can also drop photos together with a `labels.csv` (columns `file,name,brand,audience,condition,category,age_range,description,price`). `price` can be left blank to use the price picked on the page. Claude makes packs with [`tools/make_pack.py`](tools/make_pack.py).
 
+## Posting to Facebook, Instagram and TikTok
+
+Every **Social media pack** and **Make a post** opens a *Pictures ready* screen:
+
+- **Share** opens the phone's share menu. Pick Facebook, Business Suite (Facebook and Instagram together), WhatsApp, Instagram or TikTok. Android takes 10 pictures per tap.
+- **Save to the phone** saves each picture as its own JPEG (no zip).
+- **Post with Buffer** posts straight to the shop's pages from the staff app, now, in the next free slot, or at a chosen time. Set it up once (free, about 10 minutes):
+  1. Make a free account at [buffer.com](https://buffer.com) and connect the shop's **Facebook Page**, **Instagram** (must be a Business or Creator account) and **TikTok**. The free plan takes 3 accounts and 10 waiting posts each.
+  2. In Buffer open [Settings → API](https://publish.buffer.com/settings/api), click **Create API key** and copy it.
+  3. In Supabase open **Edge Functions → Deploy a new function → Via Editor**. Name it `buffer-post`, replace the sample code with everything from [`supabase/functions/buffer-post/index.ts`](supabase/functions/buffer-post/index.ts) and click **Deploy**.
+  4. Open **Edge Functions → Secrets** and add a secret named `BUFFER_API_KEY` with the key you copied.
+  5. Run the latest [`supabase/schema-paste.sql`](supabase/schema-paste.sql) once (it adds the `social` picture folder Buffer reads from).
+
 ## 3. Put the website online (GitHub Pages)
 
 The site is plain files, so GitHub Pages hosts it for free.
