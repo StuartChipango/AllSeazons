@@ -54,7 +54,6 @@ const FRAME_FILL = {
   girls: ['#f2d3e3'],
   neutral: ['#ead1e1', '#8bb5cd'], // pink on the left to blue on the right
 };
-const BADGE = { x: 989, y: 89, size: 166, color: '#d50a0a' };
 
 function roundRect(ctx, x, y, w, h, rTop, rBottom = rTop) {
   ctx.moveTo(x + rTop, y);
@@ -104,73 +103,44 @@ export async function drawLogo(ctx, x, y, w, edge = '#7eb2ca', scale = 1) {
   ctx.drawImage(logo, x, y, w, h);
 }
 
-// A hexagon with very round corners (pts: its corners).
-function roundedPoly(ctx, pts, r) {
-  const n = pts.length;
-  const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+// The badge's soft blob shape, traced from the owner's frame files: its
+// distance from the middle every 7.5 degrees, clockwise from the right.
+const BLOB = [79.2, 79.1, 79.8, 80.5, 80.9, 80.4, 79.0, 76.9, 75.4, 74.1, 74.4, 75.3, 76.9, 79.0, 80.2, 81.3,
+  81.5, 80.9, 80.1, 79.5, 79.2, 80.3, 81.7, 83.3, 83.9, 82.9, 81.4, 78.5, 76.3, 74.9, 75.1, 76.2,
+  77.7, 79.0, 79.3, 79.0, 78.1, 77.0, 76.2, 76.3, 77.6, 79.5, 81.4, 82.7, 83.4, 83.1, 81.9, 80.3];
+const BLOB_CENTRE = { x: 991.8, y: 89.1 };
+
+function blobPath(ctx, cx, cy, k = 1) {
+  const n = BLOB.length;
+  const at = (i) => {
+    const t = (2 * Math.PI * i) / n;
+    return [cx + Math.cos(t) * BLOB[i % n] * k, cy + Math.sin(t) * BLOB[i % n] * k];
+  };
+  const mid = (i) => { const [ax, ay] = at(i); const [bx, by] = at(i + 1); return [(ax + bx) / 2, (ay + by) / 2]; };
   ctx.beginPath();
-  ctx.moveTo(...mid(pts[n - 1], pts[0]));
-  for (let i = 0; i < n; i++) {
-    const p = pts[i];
-    const next = mid(p, pts[(i + 1) % n]);
-    ctx.arcTo(p[0], p[1], next[0], next[1], r);
-  }
+  ctx.moveTo(...mid(0));
+  for (let i = 1; i <= n; i++) ctx.quadraticCurveTo(...at(i), ...mid(i));
   ctx.closePath();
 }
 
-// The USED / NEW badge: a soft rounded hexagon in brand red with a white
-// sticker edge and the word in the brand font, bold.
-export function drawBadge(ctx, word, { x = BADGE.x, y = BADGE.y, size = BADGE.size, color = BADGE.color, family = FALLBACK, tilt = -0.05 } = {}) {
-  const R = size / 2;
-  const pts = Array.from({ length: 6 }, (_, i) => {
-    const a = (Math.PI / 3) * i;
-    return [Math.cos(a) * R, Math.sin(a) * R * 0.93];
-  });
+// The USED / NEW badge in the same blob shape and place as on the owner's
+// frame files: red with "Used", gold with "New" so new toys stand out.
+export const BADGE_COLORS = { used: { fill: '#d50808', text: '#ffffff' }, new: { fill: '#f6b400', text: '#1a1424' } };
+export function drawBadge(ctx, word, { x = BLOB_CENTRE.x, y = BLOB_CENTRE.y, scale = 1, fill, text, family = FALLBACK } = {}) {
+  const look = BADGE_COLORS[String(word).toLowerCase()] || BADGE_COLORS.used;
   ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(tilt);
-  // Soft shadow, white sticker edge, then the red.
-  ctx.save();
-  ctx.shadowColor = 'rgba(26, 20, 36, 0.28)';
-  ctx.shadowBlur = size * 0.07;
-  ctx.shadowOffsetY = size * 0.03;
-  roundedPoly(ctx, pts.map(([px, py]) => [px * 1.07, py * 1.07]), R * 0.4);
-  ctx.fillStyle = '#ffffff';
+  blobPath(ctx, x, y, scale);
+  ctx.fillStyle = fill || look.fill;
   ctx.fill();
-  ctx.restore();
-  roundedPoly(ctx, pts, R * 0.36);
-  const grad = ctx.createLinearGradient(0, -R, 0, R);
-  grad.addColorStop(0, shade(color, 0.12));
-  grad.addColorStop(1, shade(color, -0.1));
-  ctx.fillStyle = grad;
-  ctx.fill();
-  // A soft shine across the top.
-  ctx.save();
-  ctx.clip();
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.13)';
-  ctx.beginPath();
-  ctx.ellipse(-R * 0.15, -R * 0.75, R * 1.05, R * 0.55, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-  // The word: as big as fits, thickened with a white outline.
+  ctx.translate(x, y + 1 * scale);
+  ctx.rotate(-0.04);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const t = fit(ctx, word, size * 0.74, size * 0.42, size * 0.24, 700, family);
+  const t = fit(ctx, word, 118 * scale, 66 * scale, 40 * scale, 700, family);
   ctx.font = font(700, t.size, family);
-  ctx.lineJoin = 'round';
-  ctx.lineWidth = Math.max(2, t.size * 0.07);
-  ctx.strokeStyle = '#ffffff';
-  ctx.fillStyle = '#ffffff';
-  ctx.strokeText(t.text, 0, size * 0.03);
-  ctx.fillText(t.text, 0, size * 0.03);
+  ctx.fillStyle = text || look.text;
+  ctx.fillText(t.text, 0, 3 * scale);
   ctx.restore();
-}
-
-// Lighter (amount > 0) or darker (amount < 0) version of a #rrggbb colour.
-function shade(hex, amount) {
-  const n = parseInt(hex.slice(1), 16);
-  const ch = [n >> 16, (n >> 8) & 255, n & 255].map((v) => Math.round(amount > 0 ? v + (255 - v) * amount : v * (1 + amount)));
-  return `rgb(${ch.join(',')})`;
 }
 
 function drawFrameBand(ctx, style) {
