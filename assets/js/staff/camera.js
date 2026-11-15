@@ -3,6 +3,7 @@
 // balance, zoom, torch), keeps them between shots, and hands each photo back
 // straight away so naming starts while the next toy is being set up.
 import { esc } from '../lib.js';
+import { loadBitmap, mirrored, canvasBlob } from '../frame.js';
 
 export const cameraSupported = () => !!navigator.mediaDevices?.getUserMedia;
 
@@ -22,7 +23,9 @@ const CONTROLS = [
   { key: 'zoom', label: 'Zoom', fmt: (v) => `${v.toFixed(1)}×` },
 ];
 
-export async function openCamera({ onShot, onClose = () => {} }) {
+// pro: show the manual controls. Off (the default) keeps the camera fully
+// automatic and natural: nothing saved from earlier is applied.
+export async function openCamera({ onShot, onClose = () => {}, pro = false }) {
   const root = document.createElement('div');
   root.className = 'cam';
   root.innerHTML = `
@@ -32,6 +35,7 @@ export async function openCamera({ onShot, onClose = () => {} }) {
     <div class="cam-top">
       <button type="button" class="cam-btn" data-close aria-label="Close camera">×</button>
       <span class="cam-count" aria-live="polite"></span>
+      <button type="button" class="cam-btn" data-flip aria-label="Always turn photos round" aria-pressed="false">⇋</button>
       <button type="button" class="cam-btn" data-grid aria-label="Grid lines" aria-pressed="false">#</button>
       <button type="button" class="cam-btn" data-torch aria-label="Torch" aria-pressed="false" hidden>⚡</button>
     </div>
@@ -91,16 +95,32 @@ export async function openCamera({ onShot, onClose = () => {} }) {
 
   const caps = track.getCapabilities?.() || {};
   const imageCapture = 'ImageCapture' in window ? new ImageCapture(track) : null;
+  // Ask for the camera's biggest photo size (some phones default to less).
+  let photoSettings;
+  try {
+    const pc = await imageCapture?.getPhotoCapabilities();
+    if (pc?.imageWidth?.max) photoSettings = { imageWidth: pc.imageWidth.max, imageHeight: pc.imageHeight.max };
+  } catch { /* use the default size */ }
 
-  // Put back the settings used last time, where this camera allows them.
   const apply = async (c) => { try { await track.applyConstraints({ advanced: [c] }); return true; } catch { return false; } };
-  for (const ctl of CONTROLS) {
-    const v = saved[ctl.key];
-    if (v === undefined || !caps[ctl.key]) continue;
-    await apply(ctl.mode ? { [ctl.mode[0]]: ctl.mode[1], [ctl.key]: v } : { [ctl.key]: v });
+  if (pro) {
+    // Put back the settings used last time, where this camera allows them.
+    for (const ctl of CONTROLS) {
+      const v = saved[ctl.key];
+      if (v === undefined || !caps[ctl.key]) continue;
+      await apply(ctl.mode ? { [ctl.mode[0]]: ctl.mode[1], [ctl.key]: v } : { [ctl.key]: v });
+    }
+  } else {
+    // Natural: everything automatic, like the phone's own camera.
+    for (const ctl of CONTROLS) if (ctl.key !== 'zoom') delete saved[ctl.key];
+    const auto = {};
+    for (const m of ['exposureMode', 'focusMode', 'whiteBalanceMode']) if ((caps[m] || []).includes('continuous')) auto[m] = 'continuous';
+    if (caps.exposureCompensation) auto.exposureCompensation = 0;
+    if (Object.keys(auto).length) await apply(auto);
   }
 
-  const usable = CONTROLS.filter((c) => caps[c.key] && caps[c.key].max > caps[c.key].min
+  // Natural mode shows only zoom; manual mode shows every control the phone has.
+  const usable = CONTROLS.filter((c) => (pro || c.key === 'zoom') && caps[c.key] && caps[c.key].max > caps[c.key].min
     && (!c.mode || (caps[c.mode[0]] || []).includes(c.mode[1])));
   $('.cam-chips').innerHTML = usable.map((c) => `<button type="button" class="cam-chip" data-ctl="${c.key}">${esc(c.label)}<small></small></button>`).join('')
     || '<span class="cam-hint">Tap the picture to focus</span>';
@@ -181,6 +201,17 @@ export async function openCamera({ onShot, onClose = () => {} }) {
       if (await apply({ torch: on })) t.setAttribute('aria-pressed', String(on));
     };
   }
+  // Backup for phones where the check below cannot tell: turn every photo round.
+  const flipBtn = $('[data-flip]');
+  const paintFlip = () => flipBtn.setAttribute('aria-pressed', String(!!saved.alwaysFlip));
+  paintFlip();
+  flipBtn.onclick = () => {
+    if (saved.alwaysFlip) delete saved.alwaysFlip; else saved.alwaysFlip = true;
+    saveSettings(saved);
+    paintFlip();
+    $('.cam-msg').textContent = saved.alwaysFlip ? 'Every photo will be turned round (left ↔ right).' : 'Photos are checked and turned round only when mirrored.';
+    setTimeout(() => { $('.cam-msg').textContent = ''; }, 2500);
+  };
   $('[data-grid]').onclick = (e) => {
     const g = $('.cam-grid');
     g.hidden = !g.hidden;
@@ -188,18 +219,27 @@ export async function openCamera({ onShot, onClose = () => {} }) {
   };
 
   // Full sensor photo where the phone allows it, else the sharpest video frame.
+  // Some Android phones hand back the full photo mirrored (writing on the toy
+  // reads backwards). The live picture on screen is the right way round, so
+  // each photo is checked against it and turned back when it is mirrored.
   async function capture() {
     if (imageCapture) {
+      const view = looks(video, video.videoWidth, video.videoHeight);
       try {
-        const blob = await imageCapture.takePhoto();
-        if (blob?.size) return blob;
+        const blob = await imageCapture.takePhoto(photoSettings).catch(() => imageCapture.takePhoto());
+        if (blob?.size) {
+          if (saved.alwaysFlip) return canvasBlob(mirrored(await loadBitmap(blob)), 0.95);
+          return (await unmirror(blob, view)) || blob;
+        }
       } catch { /* fall back to a frame */ }
     }
     const c = document.createElement('canvas');
     c.width = video.videoWidth;
     c.height = video.videoHeight;
-    c.getContext('2d').drawImage(video, 0, 0);
-    return new Promise((res) => c.toBlob(res, 'image/jpeg', 0.92));
+    const ctx = c.getContext('2d');
+    if (saved.alwaysFlip) { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(video, 0, 0);
+    return new Promise((res) => c.toBlob(res, 'image/jpeg', 0.95));
   }
 
   let busy = false;
@@ -224,4 +264,59 @@ export async function openCamera({ onShot, onClose = () => {} }) {
       busy = false;
     }
   });
+}
+
+// A tiny grey copy of a picture (the middle part with the same shape as the
+// live picture), evened out for brightness, to compare two pictures by.
+const SW = 32;
+const SH = 24;
+export function looks(src, w, h, flip = false, aspect = w / h) {
+  if (!w || !h) return null;
+  const portrait = aspect < 1;
+  const [ow, oh] = portrait ? [SH, SW] : [SW, SH];
+  let cw = w;
+  let ch = w / aspect;
+  if (ch > h) { ch = h; cw = h * aspect; }
+  const c = document.createElement('canvas');
+  c.width = ow;
+  c.height = oh;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  if (flip) { ctx.translate(ow, 0); ctx.scale(-1, 1); }
+  try {
+    ctx.drawImage(src, (w - cw) / 2, (h - ch) / 2, cw, ch, 0, 0, ow, oh);
+    const px = ctx.getImageData(0, 0, ow, oh).data;
+    const g = new Float32Array(ow * oh);
+    let sum = 0;
+    for (let i = 0; i < g.length; i++) { g[i] = px[i * 4] * 0.3 + px[i * 4 + 1] * 0.59 + px[i * 4 + 2] * 0.11; sum += g[i]; }
+    const mean = sum / g.length;
+    let v = 0;
+    for (let i = 0; i < g.length; i++) { g[i] -= mean; v += g[i] * g[i]; }
+    const sd = Math.sqrt(v / g.length) || 1;
+    for (let i = 0; i < g.length; i++) g[i] /= sd;
+    return { g, aspect, portrait };
+  } catch {
+    return null;
+  }
+}
+const distance = (a, b) => { let d = 0; for (let i = 0; i < a.length; i++) d += Math.abs(a[i] - b[i]); return d / a.length; };
+
+// The photo turned back the right way round when it is a mirror image of the
+// live picture; null when it is fine (or when it cannot tell).
+export async function unmirror(blob, view) {
+  if (!view) return null;
+  try {
+    const small = await createImageBitmap(blob, { imageOrientation: 'from-image', resizeWidth: 192, resizeQuality: 'low' });
+    const { width: w, height: h } = small;
+    if ((w / h < 1) !== view.portrait) return null; // turned sideways: cannot compare
+    const same = looks(small, w, h, false, view.aspect);
+    const flipped = looks(small, w, h, true, view.aspect);
+    if (!same || !flipped) return null;
+    const dSame = distance(same.g, view.g);
+    const dFlip = distance(flipped.g, view.g);
+    // Only turn it round when the mirror image clearly matches better.
+    if (!(dFlip < dSame * 0.8)) return null;
+    return canvasBlob(mirrored(await loadBitmap(blob)), 0.95);
+  } catch {
+    return null;
+  }
 }

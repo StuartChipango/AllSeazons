@@ -96,7 +96,8 @@
   padding: 2px 8px; border-radius: 9px; border: 2px solid var(--ink); font: 700 13px var(--display); letter-spacing: 0.04em;
   text-transform: uppercase; background: #fff; color: var(--ink);
 }
-.cond.new { background: var(--orange); color: #fff; }
+/* NEW stands out in gold (the same gold as the NEW badge on social pictures). */
+.cond.new { background: #f6b400; color: var(--ink); }
 .card .body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .card .body > .price { margin-bottom: 6px; }
 .card .name { font: 700 17px/1.2 var(--body); }

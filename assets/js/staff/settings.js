@@ -1,7 +1,8 @@
 import { esc, kwacha } from '../lib.js';
 import { supabase, friendlyError } from '../db.js';
 import { shared, can, ROLE_LABELS } from './app.js';
-import { $, $$, toast, confirmBox, busy } from './ui.js';
+import { $, $$, toast, confirmBox, busy, seg } from './ui.js';
+import { prefs, setPref } from './prefs.js';
 
 let root = null;
 
@@ -126,6 +127,24 @@ function activityHtml(activity, staff) {
     </section>`;
 }
 
+// Camera and social media picture choices (kept on this phone).
+function picturesHtml() {
+  const p = prefs();
+  return `
+    <section class="settings-section card-box" id="pictures">
+      <h2>Photos and social media pictures</h2>
+      <div class="field"><span>Social media pack quality</span>
+        ${seg('pack', p.pack, [['best', 'Best (2160 × 2160, sharpest)'], ['standard', 'Standard (1080 × 1080, smaller files)']])}
+        <small>Best draws every picture fresh from the original photo at double size. Instagram, Facebook and WhatsApp all take it.</small></div>
+      <div class="field"><span>Camera for Snap</span>
+        ${seg('camera', p.camera, [['phone', 'Phone camera (natural)'], ['app', 'Quick camera (many in a row)']])}</div>
+      <div class="field"><span>Photo look</span>
+        ${seg('touchUp', p.touchUp ? 'on' : 'off', [['off', 'Natural (no changes)'], ['on', 'Touch up colours']])}
+        <small>Touch up gently brightens dull photos. Leave it on Natural when you control the light yourself.</small></div>
+      <p class="lead" style="margin:6px 0 0">These choices are saved on this phone.</p>
+    </section>`;
+}
+
 function render(towns, staff, activity) {
   const s = shared.settings;
   root.innerHTML = `${meTop()}
@@ -153,6 +172,8 @@ function render(towns, staff, activity) {
         <div class="row-actions"><button class="btn" type="submit">Save shop settings</button></div>
       </form>
     </section>
+
+    ${picturesHtml()}
 
     <section class="settings-section card-box">
       <h2>Price tiers</h2>
@@ -192,6 +213,12 @@ function render(towns, staff, activity) {
 }
 
 function wire() {
+  $$('#pictures [data-seg]', root).forEach((b) => b.addEventListener('click', () => {
+    const k = b.dataset.seg;
+    setPref(k, k === 'touchUp' ? b.dataset.value === 'on' : b.dataset.value);
+    $$(`#pictures [data-seg="${k}"]`, root).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    toast('Saved on this phone');
+  }));
   $('#shopForm', root).onsubmit = async (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));

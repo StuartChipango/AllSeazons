@@ -128,6 +128,7 @@ create index if not exists toys_box_idx on public.toys (box_id);
 alter table public.toys add column if not exists legacy_id text;
 alter table public.toys add column if not exists tagline text;
 alter table public.toys add column if not exists focus jsonb;
+alter table public.toys add column if not exists framing jsonb;
 alter table public.toys add column if not exists has_cutout boolean not null default false;
 alter table public.toys add column if not exists photo_path text;
 alter table public.toys add column if not exists media jsonb not null default '[]'::jsonb;

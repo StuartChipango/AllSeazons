@@ -5,6 +5,7 @@ import { shared, refreshBadges } from './app.js';
 import { $, $$, seg, keepFiles } from './ui.js';
 import { openCamera, cameraSupported } from './camera.js';
 import { addToyFromPhoto, addMedia, namingMode, setNamingMode } from './photos.js';
+import { prefs, setPref } from './prefs.js';
 import { loadBitmap, toJpeg } from '../frame.js';
 
 const opts = { price: null, audience: '', condition: '', box_id: '', group: 'on' };
@@ -35,9 +36,12 @@ export async function show(main) {
   }
 }
 
+// The phone's own camera app is the default: it gives the natural look
+// (its own HDR, sharpening and colour) and full quality. The quick camera
+// inside the app takes many shots in a row without leaving the page.
 function startCamera() {
-  if (!cameraSupported()) return $('#camera', root)?.click();
-  openCamera({ onShot: (file) => addFiles([file]) });
+  if (prefs().camera === 'phone' || !cameraSupported()) return $('#camera', root)?.click();
+  openCamera({ onShot: (file) => addFiles([file]), pro: prefs().pro });
 }
 
 export function leave() {
@@ -54,6 +58,7 @@ function render() {
   if (!root) return;
   root.classList.add('page-snap');
   const done = jobs.filter((j) => j.state === 'done').length;
+  const pics = prefs();
   const named = jobs.filter((j) => j.state === 'done' && j.toy && !/^Unnamed/i.test(j.toy.name)).length;
   root.innerHTML = `
     <div class="page-head"><a class="back" href="#home" aria-label="Back">‹</a><h1>Snap new toys</h1></div>
@@ -81,7 +86,14 @@ function render() {
 
     <details class="more-box" id="moreOpts" ${moreOpen ? 'open' : ''}><summary>More options</summary>
       <div class="card-box opts">
-        <span class="lbl">Naming</span>
+        <span class="lbl">Camera</span>
+        ${seg('camera', pics.camera, [['phone', 'Phone camera (natural)'], ...(cameraSupported() ? [['app', 'Quick camera (many in a row)']] : [])])}
+        <small style="color:var(--muted)">Phone camera opens your phone's own camera app, so photos look just like the ones you take normally. Quick camera stays in this app for fast batches.</small>
+        <span class="lbl" style="margin-top:10px">Photo look</span>
+        ${seg('touchUp', pics.touchUp ? 'on' : 'off', [['off', 'Natural (no changes)'], ['on', 'Touch up colours']])}
+        ${pics.camera === 'app' && cameraSupported() ? `<span class="lbl" style="margin-top:10px">Quick camera controls</span>
+        ${seg('pro', pics.pro ? 'on' : 'off', [['off', 'Automatic'], ['on', 'Manual (ISO, shutter, focus…)']])}` : ''}
+        <span class="lbl" style="margin-top:10px">Naming</span>
         ${seg('naming', namingMode(), [['device', 'On this device (free)'], ['online', 'Online AI (needs a key)']])}
         <span class="lbl" style="margin-top:10px">Several photos of one toy</span>
         ${seg('group', opts.group, [['on', 'Group them into one toy'], ['off', 'Every photo is a new toy']])}
@@ -109,8 +121,8 @@ function render() {
 
     <div class="shutter">
       <label class="gal" aria-label="Pick from gallery">${GALLERY}<input type="file" id="files" accept="image/*,video/*" multiple hidden></label>
-      ${cameraSupported() ? `<button type="button" class="shoot" id="shootBtn" aria-label="Open camera"><span>${CAMERA}</span></button>` : ''}
-      <label class="shoot" aria-label="Take photo" ${cameraSupported() ? 'hidden' : ''}><span>${CAMERA}</span><input type="file" id="camera" accept="image/*" capture="environment" hidden></label>
+      <button type="button" class="shoot" id="shootBtn" aria-label="Take photo"><span>${CAMERA}</span></button>
+      <input type="file" id="camera" accept="image/*" capture="environment" hidden>
       <a class="btn" id="reviewGo" href="#review">Review${done ? ' ' + done : ''}</a>
     </div>
   `;
@@ -122,6 +134,8 @@ function wire() {
   $('#otherPrice', root).onchange = (e) => { const v = parseInt(e.target.value, 10); if (v > 0) { opts.price = v; render(); } };
   $$('[data-seg]', root).forEach((b) => b.onclick = () => {
     if (b.dataset.seg === 'naming') setNamingMode(b.dataset.value);
+    else if (b.dataset.seg === 'camera') setPref('camera', b.dataset.value);
+    else if (b.dataset.seg === 'touchUp' || b.dataset.seg === 'pro') setPref(b.dataset.seg, b.dataset.value === 'on');
     else opts[b.dataset.seg] = b.dataset.value;
     render();
   });
@@ -191,6 +205,7 @@ async function addFiles(list) {
       step: 'Waiting',
       options: {
         ...opts,
+        touchUp: prefs().touchUp,
         labels: labels.get(labelKey(file.name)) || null,
         cutout: extras.get(`${labelKey(file.name)}-cut.png`) || null,
         plate: extras.get(`${labelKey(file.name)}-plate.jpg`) || null,
