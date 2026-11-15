@@ -145,7 +145,7 @@ function render(towns, staff, activity) {
           <label class="field"><span>Packaging fee (K)</span><input type="number" name="packaging_fee" min="0" value="${s.packaging_fee ?? 40}"><small>Added to every courier fee: packaging and the rider to the courier office.</small></label>
           <label class="field"><span>Weekly sales goal (K)</span><input type="number" name="weekly_goal" min="0" value="${s.weekly_goal}"></label>
         </div>
-        ${'hero_title' in s ? `<label class="field"><span>Headline on the big toy banner (optional)</span><input type="text" name="hero_title" maxlength="30" value="${esc(s.hero_title || '')}" placeholder="Hot this week"><small>Pick the toys for the banner in Stock: open a toy and tick "Put in the big banner".</small></label>` : ''}
+        ${'hero_title' in s ? `<input type="hidden" name="hero_title" value="${esc(s.hero_title || '')}">` : ''}
         <label class="field"><span>Message strip above the shop (optional)</span><input type="text" name="announcement" value="${esc(s.announcement || '')}" placeholder="New toys every Friday!"></label>
         <label class="field"><span>Pickup note (Lusaka)</span><input type="text" name="pickup_note" value="${esc(s.pickup_note)}"></label>
         <label class="field"><span>Yango note</span><input type="text" name="yango_note" value="${esc(s.yango_note)}"></label>

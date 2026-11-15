@@ -19,98 +19,50 @@
 
 .wrap { max-width: 1200px; margin: 0 auto; padding: 0 16px 120px; }
 
-/* Big banner: the toy or toys of the week, swipe or wait for the next. */
-.hero {
-  position: relative; overflow: hidden; margin: 14px 0 4px;
-  background: var(--blue); border: 2.5px solid var(--ink); border-radius: 24px; box-shadow: var(--pop);
-}
-.hero-plain { position: relative; padding: 14px 16px; min-height: 104px; }
-.hero h1 { font-size: clamp(22px, 5.5vw, 34px); font-weight: 700; position: relative; z-index: 1; max-width: 72%; }
-.hero-plain p { margin: 4px 0 0; font-size: 14px; font-weight: 700; position: relative; z-index: 1; max-width: 66%; }
-.hero .mascot { position: absolute; right: 6px; bottom: -22px; width: 98px; }
-.hero.has-toys { background: var(--yellow); }
-.hero .slides { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
-.hero .slides::-webkit-scrollbar { display: none; }
-.slide {
-  flex: 0 0 100%; scroll-snap-align: start; display: grid; grid-template-columns: 1fr 1.05fr; gap: 12px; align-items: center;
-  padding: 16px 14px 16px 16px; min-height: 232px;
-}
-.slide-text { display: grid; gap: 6px; align-content: center; min-width: 0; }
-.hot {
-  justify-self: start; padding: 3px 10px; border-radius: 999px; background: var(--ink); color: #fff;
-  font: 700 12px var(--display); letter-spacing: .05em; text-transform: uppercase; white-space: nowrap;
-}
-.slide h2 { font: 700 clamp(21px, 5.6vw, 34px)/1.08 var(--display); overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.slide-price { font: 700 clamp(26px, 7vw, 40px)/1 var(--display); }
-.slide-price s { font-size: 0.5em; font-weight: 500; margin-left: 6px; color: var(--ink-2); }
-.save { justify-self: start; font-weight: 800; font-size: 13px; background: #fff; border: 2px solid var(--ink); border-radius: 10px; padding: 1px 8px; }
-.slide-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap; }
-.slide .add {
-  display: inline-flex; align-items: center; gap: 4px; height: 50px; padding: 0 14px 0 10px; border-radius: 14px; cursor: pointer;
-  border: 2.5px solid var(--ink); background: var(--orange); color: #fff; box-shadow: 0 3px 0 var(--ink); font: 700 16px var(--display);
-}
-.slide .add.in-cart { background: var(--green); color: var(--ink); }
-.slide .see { border: 0; background: none; padding: 12px 4px; font: 700 17px var(--display); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; color: var(--ink); }
-.slide-pic {
-  width: 100%; aspect-ratio: 1; padding: 0; cursor: pointer; overflow: hidden;
-  border: 2.5px solid var(--ink); border-radius: 20px; background: #fff; box-shadow: 0 4px 0 var(--ink); transform: rotate(2deg);
-}
-.slide.for-boys .slide-pic { border-color: var(--blue-strong); box-shadow: 0 4px 0 var(--blue-strong); }
-.slide.for-girls .slide-pic { border-color: var(--pink-strong); box-shadow: 0 4px 0 var(--pink-strong); }
-.slide-pic img { width: 100%; height: 100%; object-fit: cover; }
-.hero-nav { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 0 0 12px; font: 700 16px var(--display); }
-.hero-nav button { width: 48px; height: 48px; border-radius: 14px; border: 2.5px solid var(--ink); background: #fff; font: 700 28px/1 var(--display); color: var(--ink); cursor: pointer; }
-@media (min-width: 720px) {
-  .slide { grid-template-columns: 1.2fr 1fr; padding: 26px 30px; min-height: 300px; }
-  .slide-pic { max-width: 340px; justify-self: end; }
-}
+/* How to buy, on one short line. */
+.steps { list-style: none; margin: 10px 0 0; padding: 0; display: flex; gap: 6px; justify-content: space-between; font: 600 14px/1.15 var(--body); color: var(--ink-2); }
+.steps li { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.steps li + li::before { content: '›'; color: var(--muted); margin-right: 1px; font-weight: 700; }
+.steps b { display: grid; place-items: center; width: 22px; height: 22px; flex: none; border-radius: 50%; background: var(--yellow); border: 2px solid var(--ink); font: 700 13px var(--display); color: var(--ink); }
+.steps u { text-decoration-color: var(--orange); text-decoration-thickness: 2px; }
+@media (max-width: 370px) { .steps { font-size: 13px; } .steps b { width: 20px; height: 20px; } }
 
-/* How to buy: three steps, open on the first visit. */
-.how { margin: 14px 0 0; background: #fff; border: 2.5px solid var(--ink); border-radius: 18px; }
-.how summary { cursor: pointer; list-style: none; min-height: 48px; display: flex; align-items: center; padding: 0 16px; font: 700 18px var(--display); }
-.how summary::after { content: '?'; margin-left: 8px; width: 26px; height: 26px; border-radius: 50%; background: var(--yellow); border: 2px solid var(--ink); display: grid; place-items: center; font-size: 15px; }
-.how[open] summary { min-height: 40px; padding-top: 6px; }
-.how ol { list-style: none; margin: 0; padding: 4px 8px 14px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-.how li { text-align: center; font-weight: 700; font-size: 15px; line-height: 1.25; }
-.how li b { display: grid; place-items: center; width: 36px; height: 36px; margin: 0 auto 6px; border-radius: 50%; background: var(--yellow); border: 2px solid var(--ink); font: 700 19px var(--display); }
-
-/* Big picture buttons: who it's for, then the kind of toy. */
-.ask { font: 700 22px var(--display); margin: 20px 0 10px; }
-.who { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.who-btn { min-height: 64px; display: flex; align-items: center; gap: 10px; padding: 0 12px; cursor: pointer; text-align: left;
-  border: 2.5px solid var(--ink); border-radius: 16px; background: #fff; color: var(--ink); box-shadow: var(--pop-sm); font: 700 19px var(--display); }
-.who-btn span { font-size: 28px; line-height: 1; }
-.who-btn.boy { background: #dce6f6; border-color: var(--blue-strong); box-shadow: 0 3px 0 var(--blue-strong); }
-.who-btn.girl { background: var(--pink); border-color: var(--pink-strong); box-shadow: 0 3px 0 var(--pink-strong); }
-.who-btn[aria-pressed="true"], .type[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; box-shadow: 0 3px 0 var(--orange); }
-.types { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-@media (min-width: 640px) { .types { grid-template-columns: repeat(6, minmax(0, 1fr)); } .who { grid-template-columns: repeat(4, 1fr); } }
-.type { min-height: 104px; display: grid; justify-items: center; align-content: center; gap: 2px; padding: 10px 4px; cursor: pointer; text-align: center;
-  border: 2.5px solid var(--ink); border-radius: 16px; background: #fff; color: var(--ink); box-shadow: var(--pop-sm); font: 700 16px/1.15 var(--display); overflow-wrap: anywhere; }
-.type span { font-size: 34px; line-height: 1.15; }
-.type small { font: 600 14px var(--body); color: var(--ink-2); }
-.type[aria-pressed="true"] small { color: #e3dacb; }
-.more-choices { margin: 14px 0 0; background: #fff; border: 2.5px solid var(--ink); border-radius: 18px; }
-.more-choices summary { cursor: pointer; list-style: none; min-height: 54px; display: flex; align-items: center; gap: 8px; padding: 0 16px; font: 700 18px var(--display); }
-.more-choices summary small { font: 600 15px var(--body); color: var(--ink-2); }
-.more-choices summary .badge { min-width: 26px; height: 26px; padding: 0 6px; border-radius: 99px; background: var(--orange); color: #fff; font-size: 15px; display: grid; place-items: center; }
-.more-choices summary small { margin-right: auto; white-space: nowrap; }
-.more-choices summary > span:first-child { white-space: nowrap; }
-.more-choices summary::after { content: '▾'; font-size: 22px; }
-.more-choices[open] summary::after { content: '▴'; }
-.more-choices[open] summary { border-bottom: 2px dashed var(--line); }
-.pick-group { padding: 10px 14px 4px; }
-.pick-group h3 { font: 700 17px var(--body); margin: 0 0 8px; }
-.taps { display: flex; flex-wrap: wrap; gap: 8px; }
-.tap { min-height: 48px; padding: 0 16px; border-radius: 14px; border: 2.5px solid var(--ink); background: #fff; color: var(--ink); font: 700 17px var(--body); cursor: pointer; }
+/* Filters: small chips. "All toys" stays put, the rest slide sideways
+   with an arrow at the end while there is more. */
+.choose { margin: 10px 0 0; }
+#allChip { flex: none; }
+.chip-line { display: flex; align-items: center; gap: 8px; }
+.chip-line.second { margin-top: 8px; }
+.slider { position: relative; flex: 1; min-width: 0; }
+.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; padding: 2px 2px 5px; scroll-padding: 0 40px; }
+.chips::-webkit-scrollbar { display: none; }
+.slider.has-more::after { content: ''; position: absolute; top: 0; right: 0; bottom: 3px; width: 56px; pointer-events: none;
+  background: linear-gradient(90deg, rgba(255, 248, 238, 0), var(--bg) 70%); }
+.slide-arrow { position: absolute; z-index: 1; right: 0; top: 50%; transform: translateY(-55%); width: 32px; height: 32px; padding: 0 0 2px 2px; border-radius: 50%; cursor: pointer;
+  border: 2px solid var(--ink); background: var(--yellow); color: var(--ink); font: 700 22px/1 var(--display); box-shadow: 0 2px 0 var(--ink); display: grid; place-items: center; }
+.fchip { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 40px; padding: 0 12px 0 9px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  border: 2px solid var(--ink); background: #fff; color: var(--ink); box-shadow: 0 2px 0 var(--ink); font: 600 15px var(--display); }
+.fchip > span { font-size: 18px; line-height: 1; }
+.fchip small { font: 700 12px var(--body); color: var(--ink-2); background: var(--bg); border-radius: 99px; padding: 1px 6px; }
+.fchip.boy { background: #dce6f6; border-color: var(--blue-strong); box-shadow: 0 2px 0 var(--blue-strong); }
+.fchip.girl { background: var(--pink); border-color: var(--pink-strong); box-shadow: 0 2px 0 var(--pink-strong); }
+.fchip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: #fff; box-shadow: 0 2px 0 var(--orange); }
+.fchip[aria-pressed="true"] small { background: rgba(255, 255, 255, .18); color: #fff; }
+#allChip .fchip { margin: 2px 0 5px; }
+.more-chip > span { font-size: 13px; }
+.more-chip[aria-expanded="true"] { background: var(--yellow); }
+.more-chip .badge { min-width: 20px; height: 20px; padding: 0 5px; border-radius: 99px; background: var(--orange); color: #fff; font: 700 12px var(--body); display: grid; place-items: center; }
+.more-panel { margin: 8px 0 0; background: #fff; border: 2px solid var(--ink); border-radius: 16px; padding-bottom: 10px; }
+.pick-group { padding: 8px 12px 0; }
+.pick-group h3 { font: 700 15px var(--body); margin: 0 0 6px; }
+.taps { display: flex; flex-wrap: wrap; gap: 6px; }
+.tap { min-height: 40px; padding: 0 12px; border-radius: 12px; border: 2px solid var(--ink); background: #fff; color: var(--ink); font: 700 15px var(--body); cursor: pointer; }
 .tap[aria-pressed="true"] { background: var(--ink); color: #fff; }
-.more-choices .pick-group:last-child { padding-bottom: 14px; }
 
 /* Sections: plain grids that grow downwards. */
-.sec { margin: 22px 0 6px; scroll-margin-top: 130px; }
+.sec { margin: 16px 0 6px; scroll-margin-top: 130px; }
 .sec-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-.sec-head h2 { font: 700 22px var(--display); display: flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.sec-head h2 { font: 700 20px var(--display); display: flex; align-items: baseline; gap: 6px; min-width: 0; flex-wrap: wrap; }
 .sec-head h2 small { font: 600 15px var(--body); color: var(--ink-2); }
 .sec-btn { flex: none; border: 2.5px solid var(--ink); background: #fff; border-radius: 14px; min-height: 48px; padding: 0 14px; font: 700 16px var(--display); cursor: pointer; color: var(--ink); }
 .show-more { margin-top: 14px; min-height: 54px; font-size: 17px; }
@@ -173,6 +125,17 @@
   position: absolute; left: 8px; bottom: 8px; z-index: 2; padding: 2px 8px; border-radius: 9px;
   background: rgba(26, 20, 36, 0.78); color: #fff; font: 600 13px var(--display);
 }
+
+/* "More toys" arrow: bottom right, lifted above the "My order" bar. */
+.more-below { position: fixed; z-index: 29; right: 14px; bottom: calc(16px + env(safe-area-inset-bottom));
+  display: inline-flex; align-items: center; gap: 4px; height: 44px; padding: 0 12px 0 14px; border-radius: 999px; cursor: pointer;
+  border: 2px solid var(--ink); background: var(--yellow); color: var(--ink); box-shadow: 0 3px 0 var(--ink); font: 700 15px var(--display);
+  animation: nudge 2.4s ease-in-out 3; }
+.more-below.small { width: 42px; height: 42px; padding: 0; justify-content: center; right: 10px; opacity: .92; }
+.more-below.small span { display: none; }
+body.has-cart .more-below { bottom: calc(96px + env(safe-area-inset-bottom)); }
+@keyframes nudge { 0%, 70%, 100% { transform: none; } 80% { transform: translateY(5px); } 90% { transform: translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) { .more-below { animation: none; } }
 
 /* Floating "N toys picked" bar: one tap to checkout. */
 .cart-bar {
@@ -262,6 +225,29 @@
 .totals { background: #fff; border: 2.5px solid var(--ink); border-radius: 18px; padding: 10px 14px; display: grid; gap: 2px; margin-bottom: 12px; font-weight: 600; }
 .totals div { display: flex; justify-content: space-between; }
 .totals .grand { font: 700 22px var(--display); }
+.policy-note { background: #fff4d6; border: 2px solid var(--ink); border-radius: 14px; padding: 9px 12px; font-size: 15px; line-height: 1.35; margin: 0 0 12px; text-align: left; }
+.policy-note b { display: block; font: 700 15px var(--display); }
+/* The WhatsApp button stays in reach at the bottom of the order. */
+.send-bar { position: sticky; bottom: 0; z-index: 2; margin: 0 -18px -22px; padding: 10px 18px calc(12px + env(safe-area-inset-bottom));
+  background: var(--bg); border-top: 2px dashed var(--line); }
+.send-bar p { font-size: 14px; color: var(--ink-2); text-align: center; margin: 6px 0 0; }
+.send-bar .btn { white-space: normal; text-align: center; line-height: 1.15; }
+/* "Add one more?" at checkout: small and sideways, one tap each. */
+.upsell { margin: 0 0 14px; }
+.upsell h3 { font: 700 17px var(--display); margin: 0 0 6px; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.upsell h3 small { font: 600 13px var(--body); color: var(--ink-2); }
+.up-row { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 5px; overscroll-behavior-x: contain; }
+.up-row::-webkit-scrollbar { display: none; }
+.up-card { flex: 0 0 108px; display: grid; gap: 1px; background: #fff; border: 2px solid var(--ink); border-radius: 14px; padding: 5px; box-shadow: 0 2px 0 var(--ink); }
+.up-card.for-boys { border-color: var(--blue-strong); box-shadow: 0 2px 0 var(--blue-strong); }
+.up-card.for-girls { border-color: var(--pink-strong); box-shadow: 0 2px 0 var(--pink-strong); }
+.up-pic { padding: 0; border: 0; background: #f4eef1; border-radius: 10px; overflow: hidden; aspect-ratio: 1; cursor: pointer; }
+.up-pic img { width: 100%; height: 100%; object-fit: cover; }
+.up-name { font: 700 13px/1.2 var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
+.up-price { font: 700 15px var(--display); }
+.up-add { display: inline-flex; align-items: center; justify-content: center; gap: 3px; height: 36px; border-radius: 10px; cursor: pointer;
+  border: 2px solid var(--ink); background: var(--orange); color: #fff; font: 700 15px var(--display); }
+.up-add svg { width: 14px; height: 14px; }
 .btn.big { min-height: 60px; font-size: 18px; border-radius: 20px; box-shadow: var(--pop); }
 .empty { text-align: center; padding: 30px 10px; color: var(--muted); }
 .done { text-align: center; padding: 10px 0; }
@@ -272,6 +258,7 @@
 .foot { text-align: center; padding: 30px 16px 110px; color: var(--muted); border-top: 2px dashed var(--line); }
 .foot img { margin: 0 auto 8px; }
 .foot p { margin: 4px 0; }
+.foot .policy { max-width: 440px; margin: 10px auto; font-size: 14px; color: var(--ink-2); }
 .wa-big { display: flex; align-items: center; gap: 14px; width: min(440px, 100%); margin: 6px auto 16px; padding: 12px 18px 12px 12px; text-align: left; text-decoration: none;
   background: #fff; color: var(--ink); border: 2.5px solid var(--ink); border-radius: 24px; box-shadow: var(--pop); }
 .wa-big:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--ink); }

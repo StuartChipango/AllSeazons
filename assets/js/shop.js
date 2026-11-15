@@ -1,7 +1,7 @@
 import { supabase, imageUrl, friendlyError, configured } from './db.js';
 import {
   esc, kwacha, effectivePrice, isSpecial, parcelSize, courierFee, waLink, orderMessage,
-  CONDITIONS, AGES, PAYMENTS, timeLabel,
+  CONDITIONS, AGES, PAYMENTS, timeLabel, storagePolicy, waitsAtShop, upsellPicks,
 } from './lib.js';
 import { track } from './track.js';
 
@@ -138,11 +138,11 @@ const LIKE_ICONS = [
 const likeIcon = (name) => (LIKE_ICONS.find(([re]) => re.test(name || '')) || [null, '🎁'])[1];
 
 // Big tap buttons instead of dropdown menus: every choice is on screen.
+// Tap a chosen one again to go back to "any child".
 const WHO = [
-  { value: 'boy', label: 'A boy', icon: '👦', cls: 'boy' },
-  { value: 'girl', label: 'A girl', icon: '👧', cls: 'girl' },
-  { value: 'baby', label: 'A baby', icon: '👶', cls: '' },
-  { value: '', label: 'Any child', icon: '🧒', cls: '' },
+  { value: 'boy', label: 'Boy', icon: '👦', cls: 'boy' },
+  { value: 'girl', label: 'Girl', icon: '👧', cls: 'girl' },
+  { value: 'baby', label: 'Baby', icon: '👶', cls: '' },
 ];
 const ageWords = (a) => (a === '9+' ? '9 and up' : String(a || '').replace('-', ' to '));
 const ageLabel = (a) => (a ? `Age ${ageWords(a)}` : '');
@@ -156,16 +156,16 @@ const pressed = (a, b) => String(String(a) === String(b));
 
 function renderPicks() {
   const f = state.filter;
-  const who = WHO.map((w) => `<button type="button" class="who-btn ${w.cls}" data-who="${w.value}" aria-pressed="${pressed(f.who, w.value)}"><span aria-hidden="true">${w.icon}</span>${w.label}</button>`).join('');
+  const extra = [f.age, f.condition].filter(Boolean).length + (f.budget ? 1 : 0) + (f.sort !== 'new' ? 1 : 0);
+  const open = !$('#moreChoices').hidden;
+  const who = WHO.map((w) => `<button type="button" class="fchip ${w.cls}" data-who="${w.value}" aria-pressed="${pressed(f.who, w.value)}"><span aria-hidden="true">${w.icon}</span>${w.label}</button>`).join('')
+    + `<button type="button" class="fchip more-chip" data-more-choices aria-expanded="${open}" aria-controls="moreChoices">Age, price${extra ? `<b class="badge">${extra}</b>` : ''}<span aria-hidden="true">${open ? '▴' : '▾'}</span></button>`;
   if ($('#who').innerHTML !== who) $('#who').innerHTML = who;
   for (const box of document.querySelectorAll('[data-pick]')) {
     const key = box.dataset.pick === 'band' ? 'budget' : box.dataset.pick;
     const html = PICKS[key].map((o) => `<button type="button" class="tap" data-set-filter="${key}" data-value="${esc(o.value)}" aria-pressed="${pressed(f[key], o.value)}">${esc(o.label)}</button>`).join('');
     if (box.innerHTML !== html) box.innerHTML = html;
   }
-  const extra = [f.age, f.condition].filter(Boolean).length + (f.budget ? 1 : 0) + (f.sort !== 'new' ? 1 : 0);
-  $('#filterCount').textContent = extra;
-  $('#filterCount').hidden = !extra;
 }
 
 // One picture button per toy type that has toys, with how many there are.
@@ -181,9 +181,24 @@ function renderCats() {
   const known = (state.categories || []).filter((c) => counts.has(c) || c === f.category);
   const extra = [...counts.keys()].filter((c) => !known.includes(c));
   const n = (k) => `${k} ${k === 1 ? 'toy' : 'toys'}`;
-  const tile = (value, icon, label, k) => `<button type="button" class="type" data-cat="${esc(value)}" aria-pressed="${pressed(f.category, value)}"><span aria-hidden="true">${icon}</span>${esc(label)}<small>${n(k)}</small></button>`;
-  const html = [tile('', '🎁', 'All toys', all), ...[...known, ...extra].map((c) => tile(c, likeIcon(c), c, counts.get(c) || 0))].join('');
+  // Short words on the chips ("Dolls" for "Dolls & Accessories"), so more fit.
+  const short = (label) => label.split(/\s*[&,/]\s*/)[0];
+  const chip = (value, icon, label, k) => `<button type="button" class="fchip type" data-cat="${esc(value)}" aria-pressed="${pressed(f.category, value)}" aria-label="${esc(label)}, ${n(k)}"><span aria-hidden="true">${icon}</span>${esc(short(label))}${value ? `<small>${k}</small>` : ''}</button>`;
+  // "All toys" stays in place; the toy types slide sideways next to it.
+  const allHtml = chip('', '🎁', 'All toys', all);
+  if ($('#allChip').innerHTML !== allHtml) $('#allChip').innerHTML = allHtml;
+  const html = [...known, ...extra].map((c) => chip(c, likeIcon(c), c, counts.get(c) || 0)).join('');
   if ($('#cats').innerHTML !== html) $('#cats').innerHTML = html;
+}
+
+// An arrow at the end of a sliding row while there is more to see.
+function updateArrows() {
+  for (const arrow of document.querySelectorAll('[data-scroller]')) {
+    const row = document.getElementById(arrow.dataset.scroller);
+    const more = row.scrollWidth - row.clientWidth - row.scrollLeft > 4;
+    arrow.hidden = !more;
+    row.parentElement.classList.toggle('has-more', more);
+  }
 }
 
 const isFiltered = () => {
@@ -227,6 +242,8 @@ function sorted(list) {
   const copy = [...list];
   if (s === 'low') copy.sort((a, b) => effectivePrice(a) - effectivePrice(b));
   else if (s === 'high') copy.sort((a, b) => effectivePrice(b) - effectivePrice(a));
+  // Toys staff pinned to the top come first when showing the newest.
+  if (s === 'new') copy.sort((a, b) => Boolean(b.is_featured) - Boolean(a.is_featured));
   // Toys you can buy first, then toys on hold.
   copy.sort((a, b) => (a.status === 'reserved') - (b.status === 'reserved'));
   return copy;
@@ -286,88 +303,15 @@ function cardHtml(t) {
     </article>`;
 }
 
-// ---- The big banner: the toy or toys of the week.
-// Staff tick "Put in the big banner" on a toy. With none ticked, the
-// banner shows the specials; with no specials, the plain welcome.
-const HERO_MAX = 6;
-let heroHtml = '';
-
-function heroToys() {
-  const live = state.toys.filter((t) => t.status === 'available');
-  const featured = live.filter((t) => t.is_featured);
-  if (featured.length) return { toys: featured.slice(0, HERO_MAX), label: 'Hot this week' };
-  const specials = live.filter(isSpecial)
-    .sort((a, b) => (b.price - effectivePrice(b)) - (a.price - effectivePrice(a)));
-  return { toys: specials.slice(0, HERO_MAX), label: 'Specials' };
-}
-
-function heroSlide(t, i, label) {
-  const p = effectivePrice(t);
-  const off = p < t.price ? Math.round((1 - p / t.price) * 100) : 0;
-  return `
-    <article class="slide for-${esc(t.audience || 'neutral')}" data-slide-i="${i}">
-      <div class="slide-text">
-        <span class="hot">🔥 ${esc(label)}</span>
-        <h2>${esc(t.name)}</h2>
-        <div class="slide-price">${kwacha(p)}${off ? `<s>${kwacha(t.price)}</s>` : ''}</div>
-        ${off ? `<span class="save">Save ${off}%</span>` : `<span class="save">${esc(CONDITIONS[t.condition] || 'Used')}${t.age_range ? ` · ${esc(ageLabel(t.age_range))}` : ''}</span>`}
-        <div class="slide-actions">${addButton(t.id, inCart(t.id))}<button class="see" data-open="${t.id}">See it</button></div>
-      </div>
-      <button class="slide-pic" data-open="${t.id}" aria-label="See ${esc(t.name)}">
-        <img src="${esc(photoUrl(t))}" alt="${esc(t.name)}" ${i ? 'loading="lazy"' : 'fetchpriority="high"'} decoding="async">
-      </button>
-    </article>`;
-}
-
-// The banner never moves by itself (it makes people tap the wrong toy).
-// With more than one toy, big arrows and "1 of 3" move it.
-function renderHero() {
-  const { toys, label } = heroToys();
-  const title = state.settings.hero_title?.trim() || label;
-  const hero = $('#hero');
-  // While someone is looking for something, the results come first.
-  hero.hidden = isFiltered() || Boolean(state.filter.q);
-  // Searching: the results sit right under the search box.
-  $('#choose').hidden = Boolean(state.filter.q);
-  $('#how').hidden = Boolean(state.filter.q);
-  const html = toys.length ? `
-    <div class="slides" id="heroSlides">${toys.map((t, i) => heroSlide(t, i, title)).join('')}</div>
-    ${toys.length > 1 ? `<div class="hero-nav">
-      <button type="button" data-hero="-1" aria-label="Previous toy">‹</button>
-      <span id="heroPos">1 of ${toys.length}</span>
-      <button type="button" data-hero="1" aria-label="Next toy">›</button>
-    </div>` : ''}` : '';
-  hero.classList.toggle('has-toys', toys.length > 0);
-  if (html === heroHtml) return;
-  heroHtml = html;
-  hero.querySelector('.hero-show')?.remove();
-  hero.querySelector('.hero-plain').hidden = toys.length > 0;
-  if (!toys.length) return;
-  const show = document.createElement('div');
-  show.className = 'hero-show';
-  show.innerHTML = html;
-  hero.append(show);
-  const slides = $('#heroSlides');
-  slides.addEventListener('scroll', () => {
-    if ($('#heroPos')) $('#heroPos').textContent = `${heroIndex() + 1} of ${toys.length}`;
-  }, { passive: true });
-}
-
-function heroIndex() {
-  const slides = $('#heroSlides');
-  return slides ? Math.round(slides.scrollLeft / slides.clientWidth) : 0;
-}
-
-function moveHero(step) {
-  const slides = $('#heroSlides');
-  if (!slides) return;
-  const n = slides.children.length;
-  const next = (heroIndex() + step + n) % n;
-  slides.scrollTo({ left: next * slides.clientWidth, behavior: 'smooth' });
+// While someone searches, the filters fold away and results come first.
+function renderTop() {
+  const searching = Boolean(state.filter.q);
+  $('#choose').hidden = searching;
+  $('.steps').hidden = searching;
 }
 
 // ---- Sections: plain grids that grow downwards; nothing to swipe.
-// Short sections (specials, sold) show 4 toys and a "See all" button.
+// Short sections (sold) show 4 toys and a "See all" button.
 const SHORT = 4;
 const PAGE = 24;
 const unfolded = new Map(); // section key -> how many cards a grid shows
@@ -382,8 +326,6 @@ function buildSections() {
   if (f.q) return [{ key: 'search', title: `Results for “${f.q}”`, icon: '🔎', toys: list, main: true, clear: true }, soldSection];
   if (isFiltered()) return [{ key: 'pick', title: describe(), icon: f.category ? likeIcon(f.category) : '🎁', toys: list, main: true, clear: true }, soldSection];
   const sections = [];
-  const specials = list.filter((t) => t.status === 'available' && isSpecial(t));
-  if (specials.length) sections.push({ key: 'specials', title: 'Specials', icon: '⭐', toys: specials });
   sections.push({ key: 'all', title: 'All toys', icon: '🎁', toys: list, main: true });
   sections.push(soldSection);
   return sections;
@@ -425,9 +367,10 @@ function emptyHtml() {
 let soldWatch;
 function render({ reset = false } = {}) {
   if (reset) for (const k of unfolded.keys()) unfolded.set(k, PAGE);
-  renderHero();
+  renderTop();
   renderPicks();
   renderCats();
+  requestAnimationFrame(updateArrows);
   const sections = buildSections();
   const html = sections.map(sectionHtml).join('');
   // Nothing changed (a background refresh): leave the page alone, so
@@ -436,9 +379,11 @@ function render({ reset = false } = {}) {
     $('#sections').innerHTML = html;
     sectionsHtml = html;
     watchSold();
+    watchMore();
   }
   $('#status').textContent = '';
   renderCartCount();
+  requestAnimationFrame(updateMoreBelow);
 }
 
 // Sold toys are only fetched when someone scrolls down to them.
@@ -456,6 +401,34 @@ function watchSold() {
   soldWatch.observe(sec);
 }
 
+// The next screenful of toys loads by itself as people scroll down;
+// the "Show more toys" button stays for phones without the observer.
+let moreWatch;
+function watchMore() {
+  moreWatch?.disconnect();
+  const btn = document.querySelector('.show-more');
+  if (!btn || !('IntersectionObserver' in window)) return;
+  moreWatch = new IntersectionObserver((entries) => {
+    if (entries.some((e) => e.isIntersecting)) { moreWatch.disconnect(); btn.click(); }
+  }, { rootMargin: '400px 0px' });
+  moreWatch.observe(btn);
+}
+
+// "More toys ⌄": shown while the toys go on below the screen. It sits
+// above the "My order" bar and never covers it.
+function updateMoreBelow() {
+  const main = document.querySelector('#sections .sec .grid');
+  const arrow = $('#moreBelow');
+  if (!main || document.querySelector('dialog[open]')) { arrow.hidden = true; return; }
+  const bottom = main.getBoundingClientRect().bottom;
+  const gone = bottom < innerHeight + 40;
+  arrow.hidden = gone;
+  // After the first scroll it shrinks to a small round arrow, out of the way.
+  arrow.classList.toggle('small', scrollY > 120);
+}
+addEventListener('scroll', () => requestAnimationFrame(updateMoreBelow), { passive: true });
+addEventListener('resize', () => { updateMoreBelow(); updateArrows(); });
+
 // Ticks the Buy buttons in place, so the lines do not jump back to the start.
 function refreshButtons(id) {
   document.querySelectorAll(`[data-add="${CSS.escape(id)}"]`).forEach((b) => {
@@ -463,7 +436,6 @@ function refreshButtons(id) {
     b.outerHTML = addButton(id, inCart(id));
   });
   sectionsHtml = '';
-  heroHtml = '';
 }
 
 // After a choice, bring the results into view under the sticky header.
@@ -571,6 +543,14 @@ function addToCart(id) {
   refreshButtons(id);
   renderCartCount();
   if ($('#toyDialog').open) openToy(t);
+  if ($('#cartDialog').open) {
+    readForm();
+    const row = $('#upRow');
+    const left = row?.scrollLeft || 0;
+    renderCart();
+    if ($('#upRow')) $('#upRow').scrollLeft = left;
+    toast(`Added ${t.name}`);
+  }
 }
 
 function cartLines() {
@@ -601,6 +581,26 @@ function openCart() {
   if (state.step === 'done' && !state.lastOrder) state.step = 'cart';
   renderCart();
   $('#cartDialog').showModal();
+  updateMoreBelow();
+}
+
+// "Add one more?": a short sideways line of similar toys, one tap each.
+// It sits under the order list and never stands between the shopper and
+// the WhatsApp button.
+function upsellHtml() {
+  const picks = upsellPicks(state.toys, state.cart.map((c) => c.id), 8);
+  if (!picks.length) return '';
+  return `<section class="upsell" aria-label="Add one more toy">
+    <h3>Add one more? <small>Same delivery, no extra fee</small></h3>
+    <div class="slider"><div class="up-row" id="upRow">${picks.map((t) => `
+      <div class="up-card for-${esc(t.audience || 'neutral')}">
+        <button type="button" class="up-pic" data-open="${t.id}" aria-label="See ${esc(t.name)}"><img src="${esc(thumbUrl(t))}" alt="" loading="lazy" width="96" height="96"></button>
+        <div class="up-name">${esc(t.name)}</div>
+        <div class="up-price">${kwacha(effectivePrice(t))}</div>
+        <button type="button" class="up-add" data-add="${t.id}" aria-label="Add ${esc(t.name)} to my order">${PLUS} Add</button>
+      </div>`).join('')}</div>
+      <button type="button" class="slide-arrow" data-scroller="upRow" aria-label="More toys to add" hidden>›</button></div>
+  </section>`;
 }
 
 function renderCart() {
@@ -616,6 +616,7 @@ function renderCart() {
           Send the order on WhatsApp so we can confirm it.</p>
         <a class="btn wa block big" id="waGo" href="${esc(o.link)}" target="_blank" rel="noopener">Send order on WhatsApp</a>
         <p class="pay-how">Total to pay: <strong>${kwacha(o.order.total)}</strong>${PAYMENTS[o.order.payment] ? `<br>${esc(PAYMENTS[o.order.payment].how)}` : ''}</p>
+        ${waitsAtShop(o.order.delivery_method) ? `<p class="policy-note">${esc(storagePolicy())}</p>` : ''}
         <img class="mascot" src="assets/img/mascots/spri.webp" alt="" width="80" height="95" loading="lazy" decoding="async">
         <button class="btn ghost block" id="keepShopping">Keep shopping</button>
       </div>`;
@@ -654,6 +655,7 @@ function renderCart() {
       <h2 id="cartTitle">My order</h2>
       <p class="calm"><b>You do not pay now.</b> We check your toys and reply on WhatsApp. Then you pay.</p>
       ${list}
+      ${upsellHtml()}
       <div class="two-col">
         <label class="field"><span>Your name</span><input type="text" name="name" autocomplete="name" required value="${esc(c.name || '')}"></label>
         <label class="field"><span>WhatsApp number</span><input type="tel" name="phone" autocomplete="tel" inputmode="tel" placeholder="0977 123 456" required value="${esc(c.phone || '')}"></label>
@@ -689,13 +691,17 @@ function renderCart() {
         <div><span>Delivery</span><span>${how === 'pickup' ? 'Free' : how === 'yango' ? 'Paid to driver' : t.feeKnown && town ? kwacha(t.fee) : 'To confirm'}</span></div>
         <div class="grand"><span>Total</span><span>${kwacha(t.total)}</span></div>
       </div>
+      ${waitsAtShop(how) ? `<p class="policy-note"><b>⏱ Collection rule</b> ${esc(storagePolicy())}</p>` : ''}
       <p class="error-text" id="checkoutError" role="alert"></p>
-      <button class="btn wa block big" type="submit" id="placeOrder" ${state.busy ? 'disabled' : ''}>
-        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-11.7 7.1L4 20l1-4A8 8 0 1 1 20 12z"/></svg>
-        ${state.busy ? 'Holding your toys…' : 'Send my order on WhatsApp'}
-      </button>
-      <p style="font-size:15px;color:var(--ink-2);text-align:center;margin:8px 0 0">We hold your toys for ${Math.round((s.hold_minutes || 120) / 60 * 10) / 10} hours while we confirm on WhatsApp.</p>
+      <div class="send-bar">
+        <button class="btn wa block big" type="submit" id="placeOrder" ${state.busy ? 'disabled' : ''}>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-11.7 7.1L4 20l1-4A8 8 0 1 1 20 12z"/></svg>
+          ${state.busy ? 'Holding your toys…' : `Send my order on WhatsApp · ${kwacha(t.total)}`}
+        </button>
+        <p>We hold your toys for ${Math.round((s.hold_minutes || 120) / 60 * 10) / 10} hours while we confirm.</p>
+      </div>
     </form>`;
+  requestAnimationFrame(updateArrows);
 }
 
 function readForm() {
@@ -785,7 +791,7 @@ document.addEventListener('click', (e) => {
     render({ reset: true });
     scrollToSections();
   } else if (el.dataset.who !== undefined) {
-    state.filter.who = el.dataset.who;
+    state.filter.who = state.filter.who === el.dataset.who ? '' : el.dataset.who;
     unfolded.delete('pick');
     render({ reset: true });
     scrollToSections();
@@ -797,9 +803,17 @@ document.addEventListener('click', (e) => {
     Object.assign(state.filter, { who: '', category: '', age: '', condition: '', budget: 0, sort: 'new', q: '' });
     $('#search').value = '';
     render({ reset: true });
-    $('#choose').scrollIntoView({ block: 'start', behavior: 'smooth' });
-  } else if (el.dataset.hero) {
-    moveHero(Number(el.dataset.hero));
+    $('#moreChoices').hidden = true;
+    renderPicks();
+    scrollTo({ top: 0, behavior: 'smooth' });
+  } else if (el.dataset.moreChoices !== undefined) {
+    $('#moreChoices').hidden = !$('#moreChoices').hidden;
+    renderPicks();
+  } else if (el.dataset.scroller) {
+    const row = document.getElementById(el.dataset.scroller);
+    row.scrollBy({ left: row.clientWidth * 0.7, behavior: 'smooth' });
+  } else if (el.id === 'moreBelow') {
+    scrollBy({ top: innerHeight * 0.75, behavior: 'smooth' });
   } else if (el.dataset.finish !== undefined) {
     $('#toyDialog').close();
     openCart();
@@ -889,10 +903,10 @@ for (const d of document.querySelectorAll('dialog')) {
 }
 window.addEventListener('hashchange', openFromHash);
 
-// "How to buy" is open on someone's first visit, then folds to one line.
-try {
-  if (!localStorage.getItem('as_seen_how')) $('#how').open = true;
-  localStorage.setItem('as_seen_how', '1');
-} catch { $('#how').open = true; }
+$('#footPolicy').textContent = storagePolicy();
+document.addEventListener('scroll', (e) => {
+  if (e.target.classList?.contains('chips') || e.target.classList?.contains('up-row')) updateArrows();
+}, { capture: true, passive: true });
+for (const d of document.querySelectorAll('dialog')) d.addEventListener('close', updateMoreBelow);
 
 loadAll().then(subscribeLive);

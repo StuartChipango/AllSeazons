@@ -93,8 +93,8 @@ function render() {
         <button class="btn small" data-bulk="sell">Sell in shop</button>
         <button class="btn small" data-bulk="special">Make special</button>
         <button class="btn small" data-bulk="unspecial">Remove special</button>
-        <button class="btn small" data-bulk="feature">Put in big banner</button>
-        <button class="btn small" data-bulk="unfeature">Take out of banner</button>
+        <button class="btn small" data-bulk="feature">Pin to top of shop</button>
+        <button class="btn small" data-bulk="unfeature">Unpin from top</button>
         <button class="btn small" data-bulk="show">Show in shop</button>
         <button class="btn small" data-bulk="hide">Hide</button>
         <button class="btn small" data-bulk="social">Social media pack</button>
@@ -213,7 +213,7 @@ function edit(t) {
         <label class="field"><span>Box</span><select name="box_id"><option value="">No box</option>${shared.boxes.map((b) => `<option ${b.id === t.box_id ? 'selected' : ''}>${esc(b.id)}</option>`).join('')}</select></label>
       </div>
       <label class="field"><input type="checkbox" name="is_special" ${t.is_special ? 'checked' : ''} style="width:auto;min-height:0"> Show in Specials</label>
-      ${'is_featured' in t ? `<label class="field"><input type="checkbox" name="is_featured" ${t.is_featured ? 'checked' : ''} style="width:auto;min-height:0"> Put in the big banner at the top of the shop (toy of the week)</label>` : ''}
+      ${'is_featured' in t ? `<label class="field"><input type="checkbox" name="is_featured" ${t.is_featured ? 'checked' : ''} style="width:auto;min-height:0"> Pin to the top of the shop (shows first in All toys)</label>` : ''}
       <label class="field"><span>Description for customers</span><textarea name="description">${esc(t.description || '')}</textarea></label>
       ${!editable ? `<p class="notice">This toy is ${t.status === 'sold' ? 'sold' : 'on hold for an order'}. Change its order on the Orders page to put it back on sale.</p>` : ''}
       <p class="mt" style="color:var(--muted);font-size:13px">Code ${esc(t.code)}${t.legacy_id ? ` · old ID ${esc(t.legacy_id)}` : ''} · added ${dateLabel(t.created_at)}${t.sold_count ? ` · sold ${t.sold_count}` : ''}</p>
