@@ -200,23 +200,33 @@ test('approve all puts the toys in the shop', async () => {
   await shopper.keyboard.press('Escape');
   assert.equal(await shopper.locator('.card .cond').first().textContent(), 'Used');
   await shot(shopper, '03-shop');
-  await shopper.getByRole('button', { name: 'Boys' }).click();
-  assert.equal(await shopper.locator('.card').count(), 1);
-  await shopper.getByRole('button', { name: 'Everyone' }).click();
+  // Big tap buttons, no dropdowns. "A girl" shows toys for girls plus
+  // toys for boys and girls; "Show all toys" undoes every choice.
+  await shopper.getByRole('button', { name: 'A girl' }).click();
+  await shopper.locator('.sec-head', { hasText: 'Toys for a girl' }).waitFor();
+  assert.equal(await shopper.locator('.card', { hasText: 'Big Brown Teddy' }).count(), 1);
+  await shopper.locator('#moreChoices summary').click();
+  await shopper.getByRole('button', { name: 'Up to K50' }).click();
+  await shopper.waitForFunction(() => document.querySelectorAll('.card').length === 0);
+  assert.equal(await shopper.locator('#filterCount').textContent(), '1');
+  await shopper.getByRole('link', { name: 'Ask us on WhatsApp' }).waitFor();
+  await shopper.locator('.sec-btn[data-clear]').click();
+  await shopper.waitForFunction(() => document.querySelectorAll('.card').length === 3);
+  await shopper.locator('#moreChoices summary').click();
 });
 
 let waUrl = '';
 test('checkout sends a labelled order to WhatsApp and holds the toys', async () => {
   await shopper.route('https://wa.me/**', (route) => { waUrl = route.request().url(); route.fulfill({ body: 'WhatsApp' }); });
-  await shopper.locator('.card', { hasText: 'Big Brown Teddy' }).getByRole('button', { name: 'Add to cart' }).click();
-  await shopper.locator('.card', { hasText: 'Red Race Car' }).getByRole('button', { name: 'Add to cart' }).click();
+  await shopper.locator('.card', { hasText: 'Big Brown Teddy' }).getByRole('button', { name: 'Buy' }).click();
+  await shopper.locator('.card', { hasText: 'Red Race Car' }).getByRole('button', { name: 'Buy' }).click();
   assert.equal(await shopper.locator('#cartCount').textContent(), '2');
   await shopper.click('#cartBtn');
   await shopper.fill('#checkout [name=name]', 'Mwila Phiri');
   await shopper.fill('#checkout [name=phone]', '0966 000 111');
   // Yango needs an address.
   await shopper.getByRole('button', { name: /Lusaka delivery/ }).click();
-  await shopper.getByRole('button', { name: 'Send order on WhatsApp' }).click();
+  await shopper.getByRole('button', { name: 'Send my order on WhatsApp' }).click();
   await shopper.getByText('Please enter your delivery address.').waitFor();
   await shopper.getByRole('button', { name: /Out of town/ }).click();
   await shopper.selectOption('#checkout [name=town_id]', { label: 'Kitwe' });
@@ -224,7 +234,7 @@ test('checkout sends a labelled order to WhatsApp and holds the toys', async () 
   await shopper.getByText('Add a note or collection point').click();
   await shopper.fill('#checkout [name=address]', 'Collect at Mazhandu Kitwe');
   await shot(shopper, '04-checkout');
-  await shopper.getByRole('button', { name: 'Send order on WhatsApp' }).click();
+  await shopper.getByRole('button', { name: 'Send my order on WhatsApp' }).click();
   await shopper.getByText('Almost done!').waitFor();
   await shot(shopper, '05-done');
   await shopper.waitForURL('https://wa.me/**', { timeout: 5000 });
@@ -274,7 +284,9 @@ test('staff mark the order paid and print the sticker', async () => {
   await sticker.close();
 
   await shopper.reload();
-  await shopper.getByRole('tab', { name: /Sold/ }).click();
+  // Sold toys load when you scroll down to them.
+  await shopper.locator('#soldSec').waitFor();
+  await shopper.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await shopper.locator('.card.is-sold').first().waitFor();
   assert.equal(await shopper.locator('.card.is-sold').count(), 2);
   await shot(shopper, '09-sold');
@@ -524,7 +536,7 @@ test('the owner adds a Sales person who signs in with a short name and sees only
   await ctx2.close();
 });
 
-test('the shop draws toys a screenful at a time and old toys get small pictures', async () => {
+test('the shop shows toys in sideways lines with a big banner, and old toys get small pictures', async () => {
   const pg = new (require('pg').Client)({ connectionString: h.dbUrl });
   await pg.connect();
   // An older toy with only a full photo: the staff app makes its small copy.
@@ -535,12 +547,41 @@ test('the shop draws toys a screenful at a time and old toys get small pictures'
   await shopper.locator('.card').first().waitFor();
   const total = (await pg.query("select count(*)::int n from toys where status in ('available','reserved')")).rows[0].n;
   assert.ok(total > 40);
-  assert.equal(await shopper.locator('.card').count(), 24, 'first screenful only');
-  for (let i = 0; i < 6 && (await shopper.locator('.card').count()) < total; i++) {
-    await shopper.locator('#more').scrollIntoViewIfNeeded();
-    await shopper.waitForTimeout(300);
-  }
-  assert.equal(await shopper.locator('.card').count(), total, 'scrolling shows the rest');
+  // Toys come in lines you swipe sideways, one line per toy type.
+  const line = shopper.locator('.sec', { hasText: 'Old Toy' });
+  assert.equal(await line.locator('.row .card').count(), 12, 'one line shows the first few');
+  await line.locator('.see-all').click();
+  assert.equal(await line.locator('.grid .card').count(), 24, 'See all opens a grid, a screenful at a time');
+  const inLine = await line.locator('h2 small').textContent();
+  for (let i = 0; i < 6 && await line.locator('.show-more').count(); i++) await line.locator('.show-more').click();
+  assert.equal(await line.locator('.grid .card').count(), Number(inLine), 'Show more shows the rest');
+  await line.getByRole('button', { name: 'Show less' }).click();
+  assert.equal(await line.locator('.row .card').count(), 12, 'Show less folds it back to one line');
+  assert.equal(await shopper.locator('.sec .card').count() >= Math.min(total, 12), true);
+
+  // A toy type chip shows only that type.
+  await pg.query("update toys set category = 'Cars & Vehicles' where name in ('Old Toy 1', 'Old Toy 2')");
+  await shopper.reload();
+  await shopper.locator('#cats').getByRole('button', { name: /Cars & Vehicles/ }).click();
+  await shopper.locator('.sec[data-sec=cat]').waitFor();
+  assert.equal(await shopper.locator('#sections .sec:not([data-sec=sold])').count(), 1);
+  const cars = (await pg.query("select count(*)::int n from toys where category = 'Cars & Vehicles' and status in ('available','reserved')")).rows[0].n;
+  assert.equal(await shopper.locator('.sec[data-sec=cat] .card').count(), cars);
+  await shopper.locator('#cats').getByRole('button', { name: 'All toys' }).click();
+
+  // The big banner shows the toys staff put in it, with their own Buy button.
+  assert.equal(await shopper.locator('#hero .slide').count(), 0);
+  await pg.query("update toys set is_featured = true, sale_price = 30 where name in ('Old Toy 3', 'Old Toy 4')");
+  await shopper.reload();
+  await shopper.locator('#hero .slide').first().waitFor();
+  assert.equal(await shopper.locator('#hero .slide').count(), 2);
+  assert.match(await shopper.locator('#hero .slide').first().innerText(), /HOT THIS WEEK[\s\S]*Old Toy [34][\s\S]*K30[\s\S]*Save 40%/i);
+  await shot(shopper, '40-shop-home');
+  await shopper.locator('#hero .slide').first().getByRole('button', { name: 'Buy' }).click();
+  assert.equal(await shopper.locator('#cartCount').textContent(), '1');
+  assert.equal(await shopper.locator('#hero .slide').first().getByRole('button', { name: 'In cart' }).count(), 1);
+  await shopper.evaluate(() => localStorage.removeItem('as_cart'));
+  await pg.query("update toys set is_featured = false, sale_price = null, category = null where name like 'Old Toy %'");
 
   await staff.goto(`${h.url}/staff/#home`);
   await staff.waitForFunction(() => true);
