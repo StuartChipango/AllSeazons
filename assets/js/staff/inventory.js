@@ -5,7 +5,7 @@ import { $, $$, toast, openPanel, closePanel, confirmBox, seg, download, busy, d
 import { reframe, replacePhoto, deleteToyFiles, flipToy, framedBlob } from './photos.js';
 import { openAdjust } from './adjust.js';
 import { prefs } from './prefs.js';
-import { makeZip } from '../unzip.js';
+import { showReady } from './sendpics.js';
 import { mediaHtml, wireMedia } from './media.js';
 
 const STATUS_LABEL = {
@@ -363,21 +363,13 @@ async function importCsv(file) {
 
 // The framed pictures (the ones with the brand frame and name) are for
 // Facebook, Instagram, WhatsApp status and so on; the website shows the
-// plain photos. One zip: 001-name.jpg... plus captions.txt to copy from.
+// plain photos. Each picture is its own JPEG (no zip), ready to share or save.
 const PACK_MAX = 60;
-function saveBlob(name, blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-}
 
 async function socialPack(list, button) {
   const ready = list.filter((t) => t.image_path);
   if (!ready.length) return toast('None of these toys has a picture yet.', true);
-  if (ready.length > PACK_MAX && !(await confirmBox(`That is ${ready.length} toys. Download the first ${PACK_MAX}? Use the filters or tick toys to choose.`))) return;
+  if (ready.length > PACK_MAX && !(await confirmBox(`That is ${ready.length} toys. Make the first ${PACK_MAX}? Use the filters or tick toys to choose.`))) return;
   const picks = ready.slice(0, PACK_MAX);
   busy(button, true, 'Making pack…');
   try {
@@ -400,28 +392,14 @@ async function socialPack(list, button) {
       }
       const num = String(i + 1).padStart(3, '0');
       const slug = t.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-      files.push({ name: `${num}-${slug || 'toy'}.jpg`, data });
+      files.push(new File([data], `allseazons-${num}-${slug || 'toy'}.jpg`, { type: 'image/jpeg' }));
       const link = new URL(`../#${encodeURIComponent(t.code)}`, location.href).href;
       captions.push([`${num}. ${t.name}${t.tagline ? ` (${t.tagline})` : ''}`,
         `${kwacha(effectivePrice(t))} · ${CONDITIONS[t.condition]}${t.age_range ? ` · ${t.age_range} yrs` : ''}`,
         t.description || '', `Order: ${link}`].filter(Boolean).join('\n'));
     }
-    const text = captions.join('\n\n') + '\n';
-    // On a phone a zip is hard to open: save each picture on its own, so it
-    // lands in the gallery ready to post, and put the captions on the clipboard.
-    if (window.matchMedia('(pointer: coarse)').matches) {
-      for (const f of files) {
-        saveBlob(f.name, new Blob([f.data], { type: 'image/jpeg' }));
-        await new Promise((r) => setTimeout(r, 350));
-      }
-      saveBlob('captions.txt', new Blob([text], { type: 'text/plain' }));
-      try { await navigator.clipboard.writeText(text); } catch { /* not allowed: captions.txt is saved too */ }
-      toast(`${picks.length} pictures saved. Captions copied.`);
-      return;
-    }
-    files.push({ name: 'captions.txt', data: text });
-    saveBlob(`social-media-pack-${new Date().toISOString().slice(0, 10)}.zip`, makeZip(files));
-    toast(`${picks.length} pictures ready to post`);
+    busy(button, false);
+    showReady(files, { caption: captions.join('\n\n'), title: `${picks.length} toy picture${picks.length > 1 ? 's' : ''} ready` });
   } catch (e) {
     toast(friendlyError(e), true);
   } finally {

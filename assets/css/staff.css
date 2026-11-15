@@ -476,3 +476,14 @@ html.cam-open, html.cam-open body { overflow: hidden; }
 .st-q small { color: var(--muted); font-weight: 600; }
 .st-q[aria-pressed="true"] { background: var(--yellow); box-shadow: var(--pop-sm); }
 .st-save-actions { display: grid; gap: 10px; margin: 6px 0 18px; }
+
+/* Pictures ready: share to Facebook etc. or save, one picture at a time (sendpics.js) */
+.sp-hint { margin: 4px 0 10px; }
+.sp-actions { display: grid; gap: 10px; margin: 6px 0 12px; }
+.sp-share { background: #1877f2; color: #fff; }
+.sp-share.done, .sp-pic.done { opacity: .7; }
+.sp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin: 0 0 16px; }
+.sp-pic { position: relative; padding: 0; border: 2px solid var(--ink); border-radius: 12px; overflow: hidden; background: #fff; cursor: pointer; aspect-ratio: 1; }
+.sp-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sp-pic span { position: absolute; left: 4px; top: 4px; min-width: 22px; padding: 1px 6px; border-radius: 99px; background: var(--ink); color: #fff; font: 700 12px var(--body); }
+.sp-pic.done::after { content: '✓'; position: absolute; right: 4px; bottom: 4px; width: 24px; height: 24px; border-radius: 50%; background: var(--green); color: var(--ink); font-weight: 800; display: grid; place-items: center; }

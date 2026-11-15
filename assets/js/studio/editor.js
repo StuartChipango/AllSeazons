@@ -10,8 +10,8 @@
 // }
 import { esc, kwacha, effectivePrice } from '../lib.js';
 import { loadBitmap, canvasBlob } from '../frame.js';
-import { makeZip } from '../unzip.js';
 import { toast, openPanel, closePanel, busy } from '../staff/ui.js';
+import { showReady } from '../staff/sendpics.js';
 import { S, THEMES, MASCOTS, FONT_LABELS, mascotOk, pickMascot, loadStudioAssets, drawPage, renderPage, photoPlacement } from './render.js';
 import { FAMILIES, ASK_KINDS, DEAL_DEFAULT, NEWS_DEFAULT, makePages, caption, uid } from './templates.js';
 
@@ -42,7 +42,6 @@ const mascotUrl = (m) => new URL(`../../img/mascots/${m}.webp`, import.meta.url)
 const $ = (sel) => root?.querySelector(sel);
 const page = () => st.pages[st.cur];
 const layer = (id = st.sel) => page()?.layers.find((l) => l.id === id);
-const isCoarse = () => window.matchMedia('(pointer: coarse)').matches;
 
 function waPretty(num) {
   const d = String(num || '').replace(/\D/g, '');
@@ -809,17 +808,6 @@ function quality() {
   try { return QUALITY[localStorage.getItem('studio_quality')] ? localStorage.getItem('studio_quality') : 'best'; } catch { return 'best'; }
 }
 
-function saveBlob(name, blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 15000);
-}
-
 async function exportPages(list) {
   const q = QUALITY[quality()];
   const ext = q.type === 'image/png' ? 'png' : 'jpg';
@@ -843,55 +831,32 @@ function openSave() {
   const n = st.pages.length;
   const text = st.opts ? caption(st.family, { ...st.opts, toys: [], ...contact() }) : '';
   const body = openPanel(`
-    <h2>Save ${n > 1 ? `${n} pictures` : 'the picture'}</h2>
+    <h2>Post or save ${n > 1 ? `${n} pictures` : 'the picture'}</h2>
     <div class="field"><span>Picture quality</span>
       <div class="st-quality">${Object.entries(QUALITY).map(([k, q]) => `
         <button type="button" class="st-q" data-q="${k}" aria-pressed="${k === quality()}"><b>${esc(q.label)}</b><small>${esc(q.hint)}</small></button>`).join('')}</div></div>
     <div class="st-save-actions">
-      ${navigator.canShare ? `<button class="btn block" data-share>Share to WhatsApp, Facebook…</button>` : ''}
-      <button class="btn block ${navigator.canShare ? 'ghost' : ''}" data-all>Save ${n > 1 ? `all ${n}` : ''} to the phone</button>
-      ${n > 1 ? `<button class="btn ghost block" data-one>Save only post ${st.cur + 1}</button>` : ''}
+      <button class="btn block" data-all>Make ${n > 1 ? `all ${n} pictures` : 'the picture'}</button>
+      ${n > 1 ? `<button class="btn ghost block" data-one>Only post ${st.cur + 1}</button>` : ''}
     </div>
-    ${text ? `<label class="field"><span>Caption to paste under the post</span><textarea rows="7" data-caption>${esc(text)}</textarea></label>
-    <button class="btn ghost" data-copy>Copy caption</button>` : ''}`);
+    <p class="muted">Next you can share straight to Facebook, WhatsApp or Instagram, or save to the phone.</p>
+    `);
   body.querySelectorAll('[data-q]').forEach((b) => (b.onclick = () => {
     try { localStorage.setItem('studio_quality', b.dataset.q); } catch { /* private mode: stays for now */ }
     body.querySelectorAll('[data-q]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
   }));
-  const copy = async () => {
-    const t = body.querySelector('[data-caption]')?.value;
-    if (!t) return;
-    try { await navigator.clipboard.writeText(t); toast('Caption copied'); } catch { /* not allowed */ }
-  };
-  body.querySelector('[data-copy]')?.addEventListener('click', copy);
-  const run = async (btn, list, how) => {
+  const run = async (btn, list) => {
     busy(btn, true, 'Making pictures…');
     try {
       const files = await exportPages(list);
-      if (how === 'share') {
-        await copy();
-        if (navigator.canShare({ files })) {
-          await navigator.share({ files, text: body.querySelector('[data-caption]')?.value || '' });
-          return;
-        }
-        toast('This phone cannot share pictures from here, so they are saved instead.');
-      }
-      if (files.length > 1 && !isCoarse()) {
-        saveBlob(`allseazons-posts-${new Date().toISOString().slice(0, 10)}.zip`, makeZip(await Promise.all(files.map(async (f) => ({ name: f.name, data: new Uint8Array(await f.arrayBuffer()) })))));
-      } else {
-        for (const f of files) {
-          saveBlob(f.name, f);
-          await new Promise((r) => setTimeout(r, 400));
-        }
-      }
-      toast(files.length > 1 ? `${files.length} pictures saved` : 'Picture saved');
+      busy(btn, false);
+      showReady(files, { caption: text });
     } catch (e) {
-      if (e?.name !== 'AbortError') toast(e.message || String(e), true);
+      toast(e.message || String(e), true);
     } finally {
       busy(btn, false);
     }
   };
-  body.querySelector('[data-share]')?.addEventListener('click', (e) => run(e.currentTarget, st.pages, 'share'));
-  body.querySelector('[data-all]').addEventListener('click', (e) => run(e.currentTarget, st.pages, 'save'));
-  body.querySelector('[data-one]')?.addEventListener('click', (e) => run(e.currentTarget, [page()], 'save'));
+  body.querySelector('[data-all]').addEventListener('click', (e) => run(e.currentTarget, st.pages));
+  body.querySelector('[data-one]')?.addEventListener('click', (e) => run(e.currentTarget, [page()]));
 }
