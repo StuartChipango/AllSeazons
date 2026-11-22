@@ -83,3 +83,12 @@ Free, built in, no extra account. After running the latest `schema-paste.sql`, t
 5. Walk-in sale: **Stock**, tick the toys, **Sell in shop**.
 
 Tip: on your phone, open the staff app and choose **Add to Home Screen** so it opens like an app.
+
+## Books (bookkeeping)
+
+One-time step: in Supabase, open **SQL Editor**, paste all of `supabase/books.sql` and press **Run**. It only adds the Books tables, the private `receipts` photo storage and the report; nothing in the shop changes. Safe to run again.
+
+- Directors (staff with the Owner job) see the Books (Home tile, or Books in the side menu).
+- Anyone on staff can hand in a receipt from the + button ("Receipt or expense"); it waits under "To check" for a director.
+- Receipts are read on the phone (`assets/vendor/tesseract`, about 7 MB the first time, then kept by the phone). No AI account needed.
+- Boxes from the Boxes page count as stock bought in the month they were bought. Link a stock receipt to its box so it is not counted twice.
