@@ -103,7 +103,6 @@ function render(report, entries, toCheck) {
         <table class="mini-table bk-pl"><tbody>
           <tr><td>Toy sales, website</td><td class="num">${k2(m.online_sales)}</td></tr>
           <tr><td>Toy sales, shop</td><td class="num">${k2(m.shop_sales)}</td></tr>
-          <tr><td>Delivery and packaging fees</td><td class="num">${k2(m.delivery)}</td></tr>
           ${Number(m.income) ? `<tr><td>Other money in</td><td class="num">${k2(m.income)}</td></tr>` : ''}
           <tr class="tot"><td>Money in (turnover)</td><td class="num">${k2(m.turnover)}</td></tr>
           <tr><td>Stock bought${m.boxes ? ` <small>(${plural(Number(m.boxes), 'box', 'boxes')} from Boxes)</small>` : ''}</td><td class="num">−${k2(m.stock)}</td></tr>
@@ -114,6 +113,7 @@ function render(report, entries, toCheck) {
           <tr><td>Turnover tax ${m.tax_paid != null ? '(paid)' : `(${rate}%, estimate)`}</td><td class="num">−${k2(p.tax)}</td></tr>
           <tr class="tot big"><td>Profit</td><td class="num">${k2(p.net)}</td></tr>
         </tbody></table>
+        ${Number(m.delivery) ? `<p class="sub" style="margin-top:8px">Delivery fees customers paid: ${k2(m.delivery)}. Passed on to the courier and riders, so not counted as money in or taxed.</p>` : ''}
       </section>
 
       <section class="card-box bk-close"><h2>Month end and tax</h2>

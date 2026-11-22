@@ -104,10 +104,11 @@ test('month-end reminder', () => {
 });
 
 test('accountant spreadsheet', () => {
-  const csv = booksCsv({ month: '2026-11-01', online_sales: 500, shop_sales: 300, delivery: 40, income: 0, turnover: 840, stock: 1000, expenses: 200, setup: 0, tax_due: 42 },
+  const csv = booksCsv({ month: '2026-11-01', online_sales: 500, shop_sales: 300, delivery: 40, income: 0, turnover: 800, stock: 1000, expenses: 200, setup: 0, tax_due: 40 },
     [{ spent_on: '2026-11-03', kind: 'expense', category: 'stock', supplier: 'Bale, "big"', amount: '1000.00', pay_method: 'mtn', paid_by: 'director', items: 40, receipt_path: 'x.jpg', status: 'ok' }]);
   assert.match(csv, /^All Seazons Play books: November 2026/);
-  assert.match(csv, /Turnover,840/);
+  assert.match(csv, /Turnover \(toys and other money in\),800/);
+  assert.match(csv, /Delivery fees passed on to couriers \(not income\),40/);
   assert.match(csv, /2026-11-03,Out,Stock \(toys bought\),"Bale, ""big""",,1000,MTN Money,Director \(owed back\),40,,Yes,Yes/);
 });
 

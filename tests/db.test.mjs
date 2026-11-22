@@ -94,7 +94,8 @@ test('checkout holds the toys and returns the order summary', async () => {
   assert.equal(r.subtotal, 160);
   assert.equal(r.total, 160);
   assert.equal(r.item_count, 2);
-  assert.equal(r.parcel_size, 'medium');
+  assert.equal(r.parcel_size, null, 'staff decide the parcel size');
+  assert.equal(r.delivery_fee, 0);
   assert.equal(r.phone, '0977123456');
   assert.deepEqual(r.items.map((i) => i.name), ['Barbie Camper', 'Duplo Train']);
   assert.equal((await toy(a.id)).status, 'reserved');
@@ -116,27 +117,43 @@ test('an unavailable toy error names it and lists its id for the cart', async ()
   assert.equal((await toy(b.id)).status, 'available', 'the failed order must not hold other toys');
 });
 
-test('out-of-town orders pick the courier fee by parcel size', async () => {
+test('out-of-town orders show a suggested courier fee; staff set the real one', async () => {
   const kitwe = (await db.query(`select id from towns where name='Kitwe'`)).rows[0].id;
   const toys = [];
   for (let i = 0; i < 5; i++) toys.push(await addToy({ name: 'Bulk ' + i, price: 50 }));
   const c = { name: 'Mwila', phone: '0966000111', location: 'out_of_town', town_id: kitwe, address: 'Mazhandu Kitwe branch' };
   const one = await place([{ toy_id: toys[0].id }], c);
-  assert.equal(one.parcel_size, 'small');
-  // Courier K60 plus the K40 packaging fee.
-  assert.equal(one.delivery_fee, 100);
-  assert.equal(one.total, 150);
+  // Nobody knows the parcel size yet: the fee waits for staff.
+  assert.equal(one.parcel_size, null);
+  assert.equal(one.delivery_fee, null);
+  // Suggestion: the town's lowest courier fee (K60) plus K40 packaging.
+  assert.equal(one.delivery_estimate, 100);
+  assert.equal(one.total, 50, 'total is toys only until the fee is set');
   assert.equal(one.delivery_method, 'courier');
   assert.equal(one.town, 'Kitwe');
   assert.equal(one.courier, 'Mazhandu');
   const four = await place(toys.slice(1, 5).map((t) => ({ toy_id: t.id })), { ...c, phone: '0966000222' });
-  assert.equal(four.parcel_size, 'medium');
-  assert.equal(four.delivery_fee, 130);
+  assert.equal(four.delivery_estimate, 100, 'never the biggest fee just because there are more toys');
   const ndola = (await db.query(`select id from towns where name='Ndola'`)).rows[0].id;
   const t = await addToy();
   const unpriced = await place([{ toy_id: t.id }], { ...c, town_id: ndola, phone: '0966000333' });
-  assert.equal(unpriced.delivery_fee, null, 'a town without fees is confirmed on WhatsApp');
+  assert.equal(unpriced.delivery_fee, null);
+  assert.equal(unpriced.delivery_estimate, null, 'a town without fees is confirmed on WhatsApp');
   assert.equal(unpriced.total, 50);
+
+  // Staff pick the parcel size and fee when they confirm.
+  const o = await order(four.code);
+  await assert.rejects(anon(() => db.query('select set_delivery_fee($1, 190, $2)', [o.id, 'large'])));
+  await assert.rejects(staff(() => db.query('select set_delivery_fee($1, -5)', [o.id])), /delivery fee/);
+  await assert.rejects(staff(() => db.query('select set_delivery_fee($1, 100, $2)', [o.id, 'huge'])), /small, medium or large/);
+  const set = (await staff(() => db.query('select (set_delivery_fee($1, 130, $2)).*', [o.id, 'medium']))).rows[0];
+  assert.equal(set.delivery_fee, 130);
+  assert.equal(set.parcel_size, 'medium');
+  assert.equal(set.subtotal, 200);
+  assert.equal(set.total, 330, 'customer pays toys + delivery');
+  // Changing it again is fine (e.g. it packed bigger than expected).
+  const again = (await staff(() => db.query('select (set_delivery_fee($1, 190, $2)).*', [o.id, 'large']))).rows[0];
+  assert.equal(again.total, 390);
 });
 
 test('checkout validates the customer details', async () => {
@@ -369,6 +386,18 @@ test('books: owners only, staff hand in receipts, report adds up each month', as
   await staff(() => db.query('select set_order_status($1,$2)', [o.id, 'paid']));
   const before = (await call(staff, `select books_report(${year}) r`)).r.months[month - 1];
 
+  // A courier order: the K150 delivery fee is passed on, so sales and tax ignore it.
+  const kitwe = (await db.query(`select id from towns where name='Kitwe'`)).rows[0].id;
+  const toyB = await addToy({ name: 'Courier toy', price: 120 });
+  const rc = await place([{ toy_id: toyB.id }], { name: 'Chanda', phone: freshPhone(), location: 'out_of_town', town_id: kitwe });
+  const oc = await order(rc.code);
+  await staff(() => db.query('select set_delivery_fee($1, 150, $2)', [oc.id, 'large']));
+  await staff(() => db.query('select set_order_status($1,$2)', [oc.id, 'paid']));
+  const withCourier = (await call(staff, `select books_report(${year}) r`)).r.months[month - 1];
+  assert.equal(withCourier.sales - before.sales, 120);
+  assert.equal(withCourier.delivery - before.delivery, 150);
+  assert.equal(withCourier.turnover - before.turnover, 120);
+
   // Staff without the owner job: can hand in a receipt, cannot read the books.
   await call(staff, `select staff_add('Bwalya', 'sales7', 'secret1', '{sales}')`);
   const clerk = asEmail('sales7@staff.allseazons.shop');
@@ -394,7 +423,7 @@ test('books: owners only, staff hand in receipts, report adds up each month', as
   assert.equal(rep.months.length, 12);
   assert.equal(Number(rep.rate), 5);
   const m = rep.months[month - 1];
-  assert.equal(m.sales - before.sales, 0, 'sale counted before');
+  assert.equal(m.sales - withCourier.sales, 0, 'sale counted before');
   assert.ok(m.sales >= 80);
   assert.equal(m.stock - before.stock, 1000 + 1500, 'unlinked box + stock entry, linked box not twice');
   assert.equal(m.stock_items - before.stock_items, 70);
@@ -402,7 +431,7 @@ test('books: owners only, staff hand in receipts, report adds up each month', as
   assert.equal(m.setup - before.setup, 700);
   assert.equal(m.income - before.income, 300);
   assert.equal(m.to_check - before.to_check, 1);
-  assert.equal(Number(m.turnover), Number(m.sales) + Number(m.delivery) + Number(m.income));
+  assert.equal(Number(m.turnover), Number(m.sales) + Number(m.income), 'delivery fees are passed on, not money in');
   assert.equal(Number(m.tax_due), Math.round(Number(m.turnover) * 5) / 100);
   assert.equal(Number(m.by_category.rent), 2000);
   const last = (await call(staff, `select books_report(${year - 1}) r`)).r.months[0];
@@ -427,4 +456,15 @@ test('running the database file again keeps staff and their jobs', async () => {
   await db.query(readFileSync(new URL('../supabase/books.sql', import.meta.url), 'utf8'));
   const r = (await db.query(`select roles from staff where email='owner@allseazons.test'`)).rows[0];
   assert.deepEqual(r.roles, ['owner']);
+});
+
+test('the delivery fees paste file runs again and takes courier fees out of past website sales', async () => {
+  const t = await addToy({ price: 70 });
+  const o = await place([{ toy_id: t.id }]);
+  // An old order tracked with the courier fee in it.
+  await db.query(`insert into visits (kind, visitor, session, order_code, amount) values ('order', 'old', 'old', $1, 170)`, [o.code]);
+  await db.query(readFileSync(new URL('../supabase/delivery-fees.sql', import.meta.url), 'utf8'));
+  await db.query(readFileSync(new URL('../supabase/delivery-fees.sql', import.meta.url), 'utf8'));
+  const v = (await db.query(`select amount from visits where order_code = $1`, [o.code])).rows[0];
+  assert.equal(v.amount, 70);
 });

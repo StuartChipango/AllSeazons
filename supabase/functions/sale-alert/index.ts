@@ -179,7 +179,7 @@ async function orderMessage(db: Db, orderId: string) {
   const { data: o } = await db.from("orders")
     .update({ alerted_at: new Date().toISOString() })
     .eq("id", orderId).eq("channel", "online").is("alerted_at", null).gte("created_at", since)
-    .select("id, code, customer_name, location, town, delivery_method, item_count, total")
+    .select("id, code, customer_name, location, town, delivery_method, item_count, subtotal")
     .maybeSingle();
   if (!o) return null;
   const { data: items } = await db.from("order_items").select("name, qty").eq("order_id", o.id).order("id").limit(2);
@@ -190,7 +190,7 @@ async function orderMessage(db: Db, orderId: string) {
     : o.delivery_method === "yango" ? "Yango delivery" : "pickup";
   const first = String(o.customer_name || "").split(/\s+/)[0];
   return {
-    title: `Cha-ching! New order ${kwacha(o.total)}`,
+    title: `Cha-ching! New order ${kwacha(o.subtotal)}`,
     body: `${o.code} · ${first} · ${o.item_count} toy${o.item_count === 1 ? "" : "s"} · ${where}` + (toys ? `\n${toys}` : ""),
     tag: o.code,
     url: "#orders",

@@ -137,7 +137,7 @@ function waPanel() {
     const msg = [
       `Hi ${customer.name}! Your All Seazons order ${data.code} is held for you until ${timeLabel(data.hold_until)}.`, '',
       ...(data.items || []).map((it, i) => `${i + 1}. ${it.name} - ${kwacha(it.price * (it.qty || 1))}`), '',
-      `*Total: ${kwacha(data.total)}*${data.delivery_method === 'courier' && data.delivery_fee == null ? ' + courier fee' : ''}`, '',
+      `*Total: ${kwacha(data.total)}*${data.delivery_method === 'courier' && data.delivery_fee == null ? ` + courier fee${data.delivery_estimate ? ` (about ${kwacha(data.delivery_estimate)}, we confirm it once your toys are packed)` : ' (we confirm it once your toys are packed)'}` : ''}`, '',
       'You can pay with:', pay, '',
       'Send us the payment message and we will get your toys ready. Thank you!',
     ].join('\n');

@@ -66,8 +66,8 @@
         </div>
         <div class="sum">
           <div><span>Toys</span><span>${kwacha(data.subtotal)}</span></div>
-          <div><span>Delivery</span><span>${data.delivery_fee === null ? 'To confirm' : data.delivery_fee ? kwacha(data.delivery_fee) : (data.delivery_method === 'yango' ? 'Paid to driver' : 'Free')}</span></div>
-          <div class="grand"><span>Total</span><span>${kwacha(data.total)}</span></div>
+          <div><span>Delivery</span><span>${data.delivery_fee === null ? `To confirm when packed${data.delivery_estimate ? ` (about ${kwacha(data.delivery_estimate)})` : ''}` : data.delivery_fee ? kwacha(data.delivery_fee) : (data.delivery_method === 'yango' ? 'Paid to driver' : 'Free')}</span></div>
+          <div class="grand"><span>Total</span><span>${kwacha(data.total)}${data.delivery_fee === null ? ' + delivery' : ''}</span></div>
         </div>`;
     }
   </script>

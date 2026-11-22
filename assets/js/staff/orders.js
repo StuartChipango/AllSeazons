@@ -1,6 +1,6 @@
 import { esc, kwacha, METHOD_LABEL, CONDITIONS, waLink, timeLabel } from '../lib.js';
 import { supabase, imageUrl, friendlyError } from '../db.js';
-import { refreshBadges, can } from './app.js';
+import { refreshBadges, can, shared } from './app.js';
 import { $, $$, toast, confirmBox, ago, dateLabel, busy } from './ui.js';
 
 const TABS = [
@@ -34,6 +34,7 @@ const SECTION_LABEL = { shop: 'Shop sales' };
 let q = '';
 let orders = [];
 let counts = {};
+let towns = null;
 const picked = new Set();
 let ticker;
 
@@ -54,6 +55,10 @@ async function load() {
   if (q) {
     const safe = q.replace(/[%,()]/g, ' ').trim();
     query = query.or(`code.ilike.%${safe}%,customer_name.ilike.%${safe}%,phone.ilike.%${safe}%,town.ilike.%${safe}%`);
+  }
+  if (!towns) {
+    const { data: tw } = await supabase.from('towns').select('*');
+    towns = tw || [];
   }
   const [{ data, error }, ...countRes] = await Promise.all([
     query.limit(200),
@@ -79,6 +84,7 @@ function orderCard(o) {
   const items = [...o.order_items].sort((a, b) => a.id - b.id);
   const place = o.delivery_method === 'courier' ? `${o.town}${o.courier ? ' · ' + o.courier : ''}` : o.location === 'shop' ? 'In the shop' : 'Lusaka';
   const feeUnknown = o.delivery_method === 'courier' && o.delivery_fee === null;
+  const feeOpen = o.delivery_method === 'courier' && ['held', 'confirmed', 'paid', 'packed'].includes(o.status) && can('sales');
   const actions = (NEXT[o.status] || []).map(([s, label, cls]) =>
     `<button class="btn small ${cls}" data-status="${s}" data-id="${o.id}">${label}</button>`).join('');
   const canCancel = !['cancelled', 'expired', 'delivered'].includes(o.status);
@@ -114,16 +120,51 @@ function orderCard(o) {
           <div>${esc(it.name)}${it.qty > 1 ? ' ×' + it.qty : ''}</div><div style="color:var(--muted)">${esc(CONDITIONS[it.condition] || '')} · ${kwacha(it.price * it.qty)}</div></div>`).join('')}
       </div>
       <div class="money">
-        <span>Toys ${kwacha(o.subtotal)}</span>
-        <span>Delivery ${feeUnknown ? `<input type="number" min="0" placeholder="Set fee" data-fee="${o.id}" style="width:110px;min-height:30px;padding:2px 8px">` : o.delivery_fee ? kwacha(o.delivery_fee) : o.delivery_method === 'yango' ? 'paid to driver' : 'free'}</span>
-        <strong>Total ${kwacha(o.total)}${feeUnknown ? ' + courier' : ''}</strong>
+        <span>Toys ${kwacha(o.subtotal)} <small>(sale)</small></span>
+        <span>Delivery ${feeUnknown ? '<b class="warn-text">not set</b>' : o.delivery_fee ? `${kwacha(o.delivery_fee)} <small>(to courier)</small>` : o.delivery_method === 'yango' ? 'paid to driver' : 'free'}</span>
+        <strong>Customer pays ${kwacha(o.total)}${feeUnknown ? ' + courier' : ''}</strong>
       </div>
+      ${feeOpen ? feeBox(o) : ''}
       <div class="row-actions">
         ${canCancel ? `<button class="btn small danger" data-status="cancelled" data-id="${o.id}">Cancel</button>` : ''}
         ${canSticker ? `<a class="btn small ghost" href="sticker.html?ids=${o.id}" target="_blank" rel="noopener">Print sticker</a>` : ''}
         ${actions}
       </div>
     </article>`;
+}
+
+// Courier fee: Platinum charges by parcel size, so whoever confirms the
+// order picks the size (or types the fee). It is passed on to the
+// courier and never counted as a sale.
+const SIZES = ['small', 'medium', 'large'];
+function feeBox(o) {
+  const town = (towns || []).find((t) => t.name === o.town);
+  const pack = Number(shared.settings?.packaging_fee ?? 0);
+  const sizes = SIZES.map((size) => {
+    const f = town?.['fee_' + size];
+    const fee = f === null || f === undefined ? null : Number(f) + pack;
+    return fee === null ? '' : `<button type="button" class="chip" data-size="${size}" data-fee-for="${o.id}" data-amount="${fee}"
+      aria-pressed="${o.parcel_size === size && o.delivery_fee === fee}">${size[0].toUpperCase() + size.slice(1)} ${kwacha(fee)}</button>`;
+  }).join('');
+  return `<div class="fee-box">
+      <div><b>Courier fee</b> ${o.delivery_fee === null
+        ? `<span class="warn-text">pick the parcel size${o.delivery_estimate ? ` (checkout said about ${kwacha(o.delivery_estimate)})` : ''}</span>`
+        : `${kwacha(o.delivery_fee)}${o.parcel_size ? ` · ${esc(o.parcel_size)} parcel` : ''}`}</div>
+      <div class="seg">${sizes}
+        <input type="number" min="0" inputmode="numeric" placeholder="Other K" data-fee-input="${o.id}" aria-label="Type the courier fee">
+        <button type="button" class="btn small ghost" data-fee-save="${o.id}">Set</button>
+      </div>
+      <small>${sizes && pack ? `Sizes include ${kwacha(pack)} packing and drop-off. ` : ''}Delivery money goes to the courier, so it is not counted in sales.</small>
+    </div>`;
+}
+
+async function setFee(o, fee, size, button) {
+  busy(button, true);
+  const { error } = await supabase.rpc('set_delivery_fee', { p_order: o.id, p_fee: fee, p_size: size });
+  busy(button, false);
+  if (error) return toast(friendlyError(error), true);
+  toast(`${o.code}: courier fee ${kwacha(fee)}, customer pays ${kwacha(o.subtotal + fee)}`);
+  await load();
 }
 
 function render() {
@@ -169,20 +210,21 @@ function wire() {
     render();
   });
   $$('[data-status]', root).forEach((b) => b.onclick = () => setStatus(b.dataset.id, b.dataset.status, b));
-  $$('[data-fee]', root).forEach((i) => i.onchange = async () => {
-    const fee = parseInt(i.value, 10);
-    if (!(fee >= 0)) return;
-    const o = orders.find((x) => x.id === i.dataset.fee);
-    const { error } = await supabase.from('orders').update({ delivery_fee: fee, total: o.subtotal + fee }).eq('id', o.id);
-    if (error) return toast(friendlyError(error), true);
-    toast(`Courier fee set: new total ${kwacha(o.subtotal + fee)}`);
-    load();
+  $$('[data-fee-for]', root).forEach((b) => b.onclick = () =>
+    setFee(orders.find((x) => x.id === b.dataset.feeFor), Number(b.dataset.amount), b.dataset.size, b));
+  $$('[data-fee-save]', root).forEach((b) => b.onclick = () => {
+    const o = orders.find((x) => x.id === b.dataset.feeSave);
+    const fee = parseInt($(`[data-fee-input="${o.id}"]`, root).value, 10);
+    if (!(fee >= 0)) return toast('Type the courier fee in kwacha.', true);
+    setFee(o, fee, null, b);
   });
 }
 
 async function setStatus(id, status, button) {
   const o = orders.find((x) => x.id === id);
   if (status === 'cancelled' && !(await confirmBox(`Cancel ${o.code}? Its toys go back on sale.`, { ok: 'Cancel order', danger: true }))) return;
+  if (status === 'paid' && o.delivery_method === 'courier' && o.delivery_fee === null
+    && !(await confirmBox(`The courier fee for ${o.code} is not set yet. Mark it paid anyway?`, { ok: 'Mark paid' }))) return;
   busy(button, true);
   const { error } = await supabase.rpc('set_order_status', { p_order: id, p_status: status });
   if (error) { busy(button, false); return toast(friendlyError(error), true); }
