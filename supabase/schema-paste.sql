@@ -132,6 +132,7 @@ alter table public.toys add column if not exists framing jsonb;
 alter table public.toys add column if not exists has_cutout boolean not null default false;
 alter table public.toys add column if not exists photo_path text;
 alter table public.toys add column if not exists media jsonb not null default '[]'::jsonb;
+alter table public.toys add column if not exists restocked_at timestamptz;
 alter table public.toys add column if not exists thumb_path text;
 alter table public.toys add column if not exists is_featured boolean not null default false;
 create sequence if not exists public.order_code_seq start 1001;
@@ -622,6 +623,57 @@ returning o2.* into o;
 return o;
 end;
 $$;
+create or replace function public._require_sales_or_stock() returns void
+language plpgsql stable security definer set search_path = public as $$
+begin
+perform public._require_staff();
+if not (public.has_role('sales') or public.has_role('stock')) then
+raise exception 'Only Sales or Stock staff can do this.' using errcode = '42501';
+end if;
+end;
+$$;
+create or replace function public.toy_sold_out(p_toy uuid) returns public.toys
+language plpgsql security definer set search_path = public as $$
+declare t public.toys;
+begin
+perform public._require_sales_or_stock();
+select * into t from public.toys where id = p_toy for update;
+if not found then raise exception 'That toy is not in stock any more.' using errcode = 'P0001'; end if;
+if t.status = 'reserved' then
+raise exception '% is on hold for an order. Cancel or finish the order first.', t.name using errcode = 'P0001';
+end if;
+if t.status <> 'available' then
+raise exception '% is not in the shop.', t.name using errcode = 'P0001';
+end if;
+update public.toys set status = 'sold', quantity = 0, sold_at = now()
+where id = t.id returning * into t;
+return t;
+end;
+$$;
+create or replace function public.toy_relist(p_toy uuid, p_qty int default 1, p_price int default null)
+returns public.toys
+language plpgsql security definer set search_path = public as $$
+declare t public.toys;
+begin
+perform public._require_sales_or_stock();
+if coalesce(p_qty, 0) < 1 then raise exception 'How many came in? At least 1.' using errcode = 'P0001'; end if;
+if p_price is not null and p_price < 0 then raise exception 'The price cannot be below zero.' using errcode = 'P0001'; end if;
+select * into t from public.toys where id = p_toy for update;
+if not found then raise exception 'That toy was deleted.' using errcode = 'P0001'; end if;
+if t.status not in ('sold', 'hidden') then
+raise exception '% is already in the shop.', t.name using errcode = 'P0001';
+end if;
+if t.image_path is null then raise exception '% has no picture yet.', t.name using errcode = 'P0001'; end if;
+if p_price is not null and p_price <> t.price and not public.has_role('stock') then
+raise exception 'Only Stock staff can change the price.' using errcode = '42501';
+end if;
+update public.toys
+set status = 'available', quantity = p_qty, price = coalesce(p_price, price),
+sold_at = null, restocked_at = now(), approved_at = now()
+where id = t.id returning * into t;
+return t;
+end;
+$$;
 create or replace function public._login_email(p_login text) returns text
 language sql immutable as $$
 select case when position('@' in btrim(p_login)) > 0 then lower(btrim(p_login))
@@ -955,6 +1007,11 @@ grant execute on function public.my_staff() to authenticated;
 revoke execute on function public.approve_toys(uuid[]) from public, anon;
 revoke execute on function public.set_order_status(uuid, text) from public, anon;
 revoke execute on function public.shop_sale(jsonb, text, text) from public, anon;
+revoke execute on function public._require_sales_or_stock() from public, anon;
+revoke execute on function public.toy_sold_out(uuid) from public, anon;
+revoke execute on function public.toy_relist(uuid, int, int) from public, anon;
+grant execute on function public.toy_sold_out(uuid) to authenticated;
+grant execute on function public.toy_relist(uuid, int, int) to authenticated;
 grant execute on function public.place_order(jsonb, jsonb) to anon, authenticated;
 grant execute on function public.get_order_public(text, text) to anon, authenticated;
 grant execute on function public.release_expired_holds() to anon, authenticated;

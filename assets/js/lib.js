@@ -58,6 +58,12 @@ export const waitsAtShop = (method) => method !== 'courier';
 
 export const isSpecial = (toy) => Boolean(toy.is_special) || ((toy.sale_price ?? null) !== null && toy.sale_price < toy.price);
 
+// A sold-out toy that staff put back on sale shows a small "New stock" tag
+// for this many days.
+export const NEW_STOCK_DAYS = 14;
+export const isNewStock = (toy, now = Date.now()) => Boolean(toy.restocked_at)
+  && now - new Date(toy.restocked_at).getTime() < NEW_STOCK_DAYS * 86400000;
+
 // Parcel size from the number of items, using the shop's settings.
 export function parcelSize(count, settings = {}) {
   const medium = settings.medium_from ?? 2;

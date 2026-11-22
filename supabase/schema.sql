@@ -189,6 +189,9 @@ alter table public.toys add column if not exists has_cutout boolean not null def
 alter table public.toys add column if not exists photo_path text;
 -- More photos and videos for the toy's shop page: [{"path": ..., "type": "image" | "video"}].
 alter table public.toys add column if not exists media jsonb not null default '[]'::jsonb;
+-- When a sold-out toy was put back on sale with new stock. The shop shows a
+-- small "New stock" tag for 14 days after this.
+alter table public.toys add column if not exists restocked_at timestamptz;
 -- A small copy of the plain photo (480 px) for the shop's toy cards, so
 -- phones load a few KB per toy instead of the full photo.
 alter table public.toys add column if not exists thumb_path text;
@@ -759,6 +762,63 @@ begin
 end;
 $$;
 
+-- In the shop: mark a toy sold out (none left, off the website's toy list)
+-- and later relist it when new stock comes in. Sales or Stock staff.
+create or replace function public._require_sales_or_stock() returns void
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform public._require_staff();
+  if not (public.has_role('sales') or public.has_role('stock')) then
+    raise exception 'Only Sales or Stock staff can do this.' using errcode = '42501';
+  end if;
+end;
+$$;
+
+create or replace function public.toy_sold_out(p_toy uuid) returns public.toys
+language plpgsql security definer set search_path = public as $$
+declare t public.toys;
+begin
+  perform public._require_sales_or_stock();
+  select * into t from public.toys where id = p_toy for update;
+  if not found then raise exception 'That toy is not in stock any more.' using errcode = 'P0001'; end if;
+  if t.status = 'reserved' then
+    raise exception '% is on hold for an order. Cancel or finish the order first.', t.name using errcode = 'P0001';
+  end if;
+  if t.status <> 'available' then
+    raise exception '% is not in the shop.', t.name using errcode = 'P0001';
+  end if;
+  update public.toys set status = 'sold', quantity = 0, sold_at = now()
+  where id = t.id returning * into t;
+  return t;
+end;
+$$;
+
+create or replace function public.toy_relist(p_toy uuid, p_qty int default 1, p_price int default null)
+returns public.toys
+language plpgsql security definer set search_path = public as $$
+declare t public.toys;
+begin
+  perform public._require_sales_or_stock();
+  if coalesce(p_qty, 0) < 1 then raise exception 'How many came in? At least 1.' using errcode = 'P0001'; end if;
+  if p_price is not null and p_price < 0 then raise exception 'The price cannot be below zero.' using errcode = 'P0001'; end if;
+  select * into t from public.toys where id = p_toy for update;
+  if not found then raise exception 'That toy was deleted.' using errcode = 'P0001'; end if;
+  if t.status not in ('sold', 'hidden') then
+    raise exception '% is already in the shop.', t.name using errcode = 'P0001';
+  end if;
+  if t.image_path is null then raise exception '% has no picture yet.', t.name using errcode = 'P0001'; end if;
+  -- Only Stock staff (or the owner) may change a price.
+  if p_price is not null and p_price <> t.price and not public.has_role('stock') then
+    raise exception 'Only Stock staff can change the price.' using errcode = '42501';
+  end if;
+  update public.toys
+  set status = 'available', quantity = p_qty, price = coalesce(p_price, price),
+      sold_at = null, restocked_at = now(), approved_at = now()
+  where id = t.id returning * into t;
+  return t;
+end;
+$$;
+
 -- =====================================================================
 -- Staff accounts (owner only). Staff without an email sign in with a
 -- short name; it becomes <name>@staff.allseazons.shop behind the scenes.
@@ -1145,6 +1205,11 @@ grant execute on function public.my_staff() to authenticated;
 revoke execute on function public.approve_toys(uuid[]) from public, anon;
 revoke execute on function public.set_order_status(uuid, text) from public, anon;
 revoke execute on function public.shop_sale(jsonb, text, text) from public, anon;
+revoke execute on function public._require_sales_or_stock() from public, anon;
+revoke execute on function public.toy_sold_out(uuid) from public, anon;
+revoke execute on function public.toy_relist(uuid, int, int) from public, anon;
+grant execute on function public.toy_sold_out(uuid) to authenticated;
+grant execute on function public.toy_relist(uuid, int, int) to authenticated;
 grant execute on function public.place_order(jsonb, jsonb) to anon, authenticated;
 grant execute on function public.get_order_public(text, text) to anon, authenticated;
 grant execute on function public.release_expired_holds() to anon, authenticated;
