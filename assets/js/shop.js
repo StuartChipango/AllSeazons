@@ -1,12 +1,12 @@
 import { supabase, imageUrl, friendlyError, configured } from './db.js';
 import {
-  esc, kwacha, effectivePrice, isSpecial, courierEstimate, waLink, orderMessage,
+  esc, kwacha, effectivePrice, isSpecial, isNewStock, courierEstimate, waLink, orderMessage,
   CONDITIONS, AGES, PAYMENTS, timeLabel, storagePolicy, waitsAtShop, upsellPicks,
 } from './lib.js';
 import { track } from './track.js';
 import { scoreToy, searchToys, wireSearchBox } from './search.js';
 
-const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,is_featured,quantity,status,image_path,photo_path,thumb_path,media,created_at,approved_at,sold_at';
+const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,is_featured,quantity,status,image_path,photo_path,thumb_path,media,created_at,approved_at,sold_at,restocked_at';
 const $ = (sel) => document.querySelector(sel);
 
 const state = {
@@ -66,7 +66,7 @@ async function loadAll() {
 
 // Columns the database may not have yet (until the latest schema is run):
 // the shop then loads without them instead of showing an error.
-const NEWER_COLUMNS = ['media', 'thumb_path', 'is_featured'];
+const NEWER_COLUMNS = ['media', 'thumb_path', 'is_featured', 'restocked_at'];
 let columnsInUse = TOY_COLUMNS;
 
 // The Sold section is only fetched when someone opens it.
@@ -284,6 +284,7 @@ function cardHtml(t) {
   const hold = t.status === 'reserved';
   const ribbon = sold ? '<span class="ribbon sold">Sold</span>'
     : hold ? '<span class="ribbon hold">On hold</span>'
+    : isNewStock(t) ? '<span class="ribbon fresh">New stock</span>'
     : isSpecial(t) ? '<span class="ribbon">Special</span>' : '';
   const button = sold || hold ? '' : addButton(t.id, inCart(t.id));
   return `
@@ -510,6 +511,7 @@ function openToy(t) {
       <div class="tags">
         <span class="tag ${t.audience}">${esc(FOR_WHO[t.audience] || FOR_WHO.neutral)}</span>
         <span class="tag">${esc(CONDITIONS[t.condition])}</span>
+        ${isNewStock(t) && !sold ? '<span class="tag fresh">New stock</span>' : ''}
         ${t.category ? `<span class="tag">${esc(t.category)}</span>` : ''}
         ${t.age_range ? `<span class="tag">${esc(ageLabel(t.age_range))}</span>` : ''}
         ${t.brand ? `<span class="tag">${esc(t.brand)}</span>` : ''}

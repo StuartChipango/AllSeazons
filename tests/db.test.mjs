@@ -458,6 +458,35 @@ test('running the database file again keeps staff and their jobs', async () => {
   assert.deepEqual(r.roles, ['owner']);
 });
 
+test('in the shop, staff mark a toy sold out and relist it as new stock', async () => {
+  await call(staff, `select staff_add('Mutale', 'till9', 'secret1', '{sales}')`);
+  const salesP = asEmail('till9@staff.allseazons.shop');
+  const t = await addToy({ name: 'Red Car', price: 80 });
+  // The public and strangers cannot.
+  await assert.rejects(anon(() => db.query('select toy_sold_out($1)', [t.id])));
+  await assert.rejects(call(stranger, 'select toy_sold_out($1)', [t.id]), /Staff only|Only Sales/);
+  const out = await call(salesP, 'select * from toy_sold_out($1)', [t.id]);
+  assert.equal(out.status, 'sold');
+  assert.equal(out.quantity, 0);
+  await assert.rejects(call(salesP, 'select toy_sold_out($1)', [t.id]), /not in the shop/);
+  // Sales may relist but not change the price; the owner (Stock) may.
+  await assert.rejects(call(salesP, 'select toy_relist($1, 2, 120)', [t.id]), /Only Stock/);
+  await assert.rejects(call(salesP, 'select toy_relist($1, 0)', [t.id]), /At least 1/);
+  const back = await call(salesP, 'select * from toy_relist($1, 3)', [t.id]);
+  assert.equal(back.status, 'available');
+  assert.equal(back.quantity, 3);
+  assert.equal(back.price, 80);
+  assert.ok(back.restocked_at);
+  await assert.rejects(call(salesP, 'select toy_relist($1)', [t.id]), /already in the shop/);
+  // A toy on hold for an order cannot be marked sold out.
+  const h = await addToy({ name: 'Held Doll' });
+  await place([{ toy_id: h.id, qty: 1 }]);
+  await assert.rejects(call(salesP, 'select toy_sold_out($1)', [h.id]), /on hold/);
+  // The website can read restocked_at for the tag.
+  const seen = await anon(async () => (await db.query('select restocked_at from toys where id=$1', [t.id])).rows[0]);
+  assert.ok(seen.restocked_at);
+});
+
 test('the delivery fees paste file runs again and takes courier fees out of past website sales', async () => {
   const t = await addToy({ price: 70 });
   const o = await place([{ toy_id: t.id }]);

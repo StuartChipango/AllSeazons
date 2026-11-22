@@ -1,4 +1,4 @@
-import { esc, kwacha, AGES, AUDIENCES, CONDITIONS, effectivePrice, parseCsv, toCsv, legacyRowToToy } from '../lib.js';
+import { esc, kwacha, AGES, AUDIENCES, CONDITIONS, effectivePrice, isNewStock, parseCsv, toCsv, legacyRowToToy } from '../lib.js';
 import { supabase, imageUrl, friendlyError } from '../db.js';
 import { shared, refreshBadges } from './app.js';
 import { $, $$, toast, openPanel, closePanel, confirmBox, seg, download, busy, dateLabel } from './ui.js';
@@ -97,7 +97,7 @@ function render() {
         <input type="checkbox" data-pick="${t.id}" ${selected.has(t.id) ? 'checked' : ''} aria-label="Select ${esc(t.name)}">
         <img src="${esc(imageUrl(t.thumb_path || t.image_path))}" alt="" loading="lazy" decoding="async">
         <div><div class="nm">${esc(t.name)}</div>
-          <div class="mt">${esc(t.code)} · ${esc(AUDIENCES[t.audience]?.label)} · ${esc(CONDITIONS[t.condition])}${t.box_id ? ' · ' + esc(t.box_id) : ''}${t.quantity > 1 ? ` · ${t.quantity} left` : ''}</div></div>
+          <div class="mt">${esc(t.code)} · ${esc(AUDIENCES[t.audience]?.label)} · ${esc(CONDITIONS[t.condition])}${t.box_id ? ' · ' + esc(t.box_id) : ''}${t.quantity > 1 ? ` · ${t.quantity} left` : ''}${isNewStock(t) ? ' · <span class="stock-tag inline">New stock</span>' : ''}</div></div>
         <div style="text-align:right"><div><strong>${kwacha(effectivePrice(t))}</strong>${effectivePrice(t) < t.price ? ` <s style="color:var(--muted)">${kwacha(t.price)}</s>` : ''}</div>
           <span class="pill ${t.status}">${STATUS_LABEL[t.status]}</span></div>
       </div>`).join('')}
@@ -215,6 +215,7 @@ function edit(t) {
       ${t.image_path ? '<button type="button" class="btn ghost small" id="adjustPhoto" title="Zoom and move the photo inside the frame">✥ Adjust photo</button>' : ''}
       ${t.image_path ? '<button type="button" class="btn ghost small" id="flipPhoto" title="For photos where writing reads backwards">⇋ Flip photo</button>' : ''}
       ${t.status === 'available' ? '<button class="btn ghost small" id="sellOne">Sell in shop</button>' : ''}
+      ${t.status === 'sold' && t.image_path ? '<button class="btn go small" id="relistOne">Relist as new stock</button>' : ''}
     </div>
     <form id="editForm">
       <label class="field"><span>Small top line on the picture (optional)</span><input type="text" name="tagline" maxlength="30" value="${esc(t.tagline || '')}"></label>
@@ -236,7 +237,7 @@ function edit(t) {
       <label class="field"><input type="checkbox" name="is_special" ${t.is_special ? 'checked' : ''} style="width:auto;min-height:0"> Show in Specials</label>
       ${'is_featured' in t ? `<label class="field"><input type="checkbox" name="is_featured" ${t.is_featured ? 'checked' : ''} style="width:auto;min-height:0"> Pin to the top of the shop (shows first in All toys)</label>` : ''}
       <label class="field"><span>Description for customers</span><textarea name="description">${esc(t.description || '')}</textarea></label>
-      ${!editable ? `<p class="notice">This toy is ${t.status === 'sold' ? 'sold' : 'on hold for an order'}. Change its order on the Orders page to put it back on sale.</p>` : ''}
+      ${!editable ? `<p class="notice">${t.status === 'sold' ? 'This toy is sold or sold out. When more come in, tap <b>Relist as new stock</b> above.' : 'This toy is on hold for an order. Change its order on the Orders page to put it back on sale.'}</p>` : ''}
       <p class="mt" style="color:var(--muted);font-size:13px">Code ${esc(t.code)}${t.legacy_id ? ` · old ID ${esc(t.legacy_id)}` : ''} · added ${dateLabel(t.created_at)}${t.sold_count ? ` · sold ${t.sold_count}` : ''}</p>
       <div class="row-actions">
         <button type="button" class="btn danger" id="del">Delete</button>
@@ -336,6 +337,10 @@ function edit(t) {
   }));
 
   $('#sellOne', body)?.addEventListener('click', () => sellPanel([t]));
+  $('#relistOne', body)?.addEventListener('click', async () => {
+    const { relistPanel } = await import('./sale.js');
+    relistPanel(t, load);
+  });
 
   $('#del', body).onclick = async () => {
     if (!(await confirmBox(`Delete “${t.name}” for good? Past orders keep their record.`, { ok: 'Delete', danger: true }))) return;

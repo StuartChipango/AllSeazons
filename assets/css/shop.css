@@ -124,6 +124,8 @@
 }
 .ribbon.hold { background: #fff; }
 .ribbon.sold { background: var(--ink); color: #fff; }
+/* Small "New stock" tag on a toy staff relisted in the last 14 days. */
+.ribbon.fresh, .tag.fresh { background: #2fbf71; color: #fff; }
 .card.is-sold .pic img, .card.is-hold .pic img { filter: grayscale(0.35); opacity: 0.8; }
 .more {
   position: absolute; left: 8px; bottom: 8px; z-index: 2; padding: 2px 8px; border-radius: 9px;
