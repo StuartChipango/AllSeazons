@@ -5,6 +5,23 @@
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
+// The website host lets phones keep the app's files for 10 minutes, so
+// after an update a phone could keep showing the old screens. Always ask
+// the website whether a file changed (a quick check; unchanged files are
+// not downloaded again). Without a connection, the phone's copy is used.
+const APP_FILE = /\.(?:js|mjs|css|html|webmanifest)$/;
+self.addEventListener('fetch', (e) => {
+  const r = e.request;
+  if (r.method !== 'GET') return;
+  const url = new URL(r.url);
+  if (url.origin !== self.location.origin) return;
+  if (r.mode === 'navigate') {
+    e.respondWith(fetch(r.url, { cache: 'no-cache', credentials: 'same-origin' }).catch(() => fetch(r)));
+  } else if (APP_FILE.test(url.pathname)) {
+    e.respondWith(fetch(r, { cache: 'no-cache' }).catch(() => fetch(r)));
+  }
+});
+
 self.addEventListener('push', (e) => {
   let m = {};
   try { m = e.data ? e.data.json() : {}; } catch { m = { body: e.data?.text() }; }
