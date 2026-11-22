@@ -101,13 +101,16 @@ grant select, insert, update, delete on public.book_entries, public.book_months 
 -- ---------------------------------------------------------------------
 -- The report: twelve months of one year (Lusaka time).
 --   sales       paid orders (website + shop), toys only
---   delivery    delivery and packaging fees customers paid
+--   delivery    courier and packaging fees customers paid. Shown for
+--               information only: this money is passed straight on to
+--               Platinum and the riders, so it is NOT a sale, NOT money
+--               in and NOT taxed.
 --   income      other money in (book_entries kind income)
 --   stock       stock bought: book entries in the stock category, plus
 --               boxes from the Boxes page that no book entry points to
 --   setup       one-off costs of setting up a shop
 --   expenses    everything else, by category
---   turnover    sales + delivery + income  (turnover tax is on this)
+--   turnover    sales + income  (turnover tax is on this)
 -- ---------------------------------------------------------------------
 create or replace function public.books_report(p_year int) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
@@ -183,8 +186,8 @@ begin
       'online_sales', online_sales, 'shop_sales', shop_sales,
       'sales', online_sales + shop_sales,
       'delivery', delivery, 'income', income,
-      'turnover', online_sales + shop_sales + delivery + income,
-      'tax_due', round((online_sales + shop_sales + delivery + income) * v_rate / 100, 2),
+      'turnover', online_sales + shop_sales + income,
+      'tax_due', round((online_sales + shop_sales + income) * v_rate / 100, 2),
       'stock', stock, 'stock_items', stock_items, 'boxes', boxes,
       'setup', setup, 'expenses', expenses, 'by_category', by_category,
       'to_check', to_check, 'no_receipt', no_receipt, 'entries', entries,

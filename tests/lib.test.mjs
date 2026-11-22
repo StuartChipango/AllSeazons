@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  kwacha, waNumber, waLink, parcelSize, courierFee, orderMessage, priceBands, parseCsv, toCsv,
+  kwacha, waNumber, waLink, parcelSize, courierFee, courierEstimate, orderMessage, priceBands, parseCsv, toCsv,
   legacyRowToToy, nameFromFile, effectivePrice, isSpecial, deliveryLine, packLabels, labelKey, parseFocus,
   storagePolicy, upsellPicks,
 } from '../assets/js/lib.js';
@@ -84,7 +84,9 @@ test('checkout suggests toys like the ones picked, cheapest first', () => {
 test('delivery wording for each method', () => {
   assert.equal(deliveryLine({ delivery_method: 'pickup' }), 'Pickup in Lusaka (free)');
   assert.match(deliveryLine({ delivery_method: 'yango' }), /paid to the driver/);
-  assert.match(deliveryLine({ ...order, delivery_fee: null }), /fee to be confirmed/);
+  assert.match(deliveryLine({ ...order, delivery_fee: null }), /fee to be confirmed when packed\)/);
+  assert.match(deliveryLine({ ...order, delivery_fee: null, parcel_size: null, delivery_estimate: 140 }), /fee to be confirmed when packed, about K140/);
+  assert.doesNotMatch(deliveryLine({ ...order, delivery_fee: null, parcel_size: null }), /null/);
   const m = orderMessage({ ...order, delivery_fee: null, total: 220 }, '');
   assert.match(m, /TOTAL TO PAY:\* K220 \+ courier fee/);
 });
@@ -184,4 +186,11 @@ test('traffic sources: tracked links, referrers and in-app browsers', async () =
   assert.equal(sourceFromTag('fb-christmas'), 'facebook');
   assert.equal(trackedLink('https://allseazons.shop/#ABC', 'wa-status'), 'https://allseazons.shop/?src=wa-status');
   assert.equal(trackedLink('https://allseazons.shop/', 'fb', 'Easter Toys!'), 'https://allseazons.shop/?src=fb&c=easter-toys');
+});
+
+test('the checkout courier suggestion is the lowest fee plus packaging, never the biggest', () => {
+  assert.equal(courierEstimate({ fee_small: 150, fee_medium: 200, fee_large: 250 }, 40), 190);
+  assert.equal(courierEstimate({ fee_small: null, fee_medium: 200, fee_large: 250 }, 40), 240);
+  assert.equal(courierEstimate({ fee_small: null, fee_medium: null, fee_large: null }, 40), null);
+  assert.equal(courierEstimate(null, 40), null);
 });

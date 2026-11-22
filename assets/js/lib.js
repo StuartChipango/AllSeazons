@@ -74,6 +74,16 @@ export function courierFee(town, size) {
   return fee === undefined || fee === null || fee === '' ? null : Number(fee);
 }
 
+// Suggested courier fee shown at checkout: the town's lowest fee plus
+// packaging. Platinum charges by parcel size, which nobody knows until
+// the toys are packed, so staff set the real fee when they confirm.
+// null means the town has no fees: "confirmed on WhatsApp".
+export function courierEstimate(town, packaging = 0) {
+  if (!town) return null;
+  const fees = ['small', 'medium', 'large'].map((s) => courierFee(town, s)).filter((f) => f !== null);
+  return fees.length ? Math.min(...fees) + Number(packaging || 0) : null;
+}
+
 // Zambian numbers: 0977 123 456 -> 260977123456 (the form wa.me needs).
 export function waNumber(phone) {
   let d = String(phone ?? '').replace(/\D/g, '');
@@ -93,10 +103,13 @@ export function deliveryLine(order) {
   if (order.delivery_method === 'pickup') return 'Pickup in Lusaka (free)';
   if (order.delivery_method === 'yango') return 'Yango delivery in Lusaka (fee paid to the driver)';
   if (order.delivery_method === 'walk_in') return 'Bought in the shop';
-  const where = `Courier to ${order.town}${order.courier ? ' via ' + order.courier : ''}, ${SIZE_LABEL[order.parcel_size] || order.parcel_size} parcel`;
-  return order.delivery_fee === null || order.delivery_fee === undefined
-    ? `${where} (fee to be confirmed)`
-    : `${where} - ${kwacha(order.delivery_fee)}`;
+  const where = `Courier to ${order.town}${order.courier ? ' via ' + order.courier : ''}`;
+  if (order.delivery_fee === null || order.delivery_fee === undefined) {
+    const est = order.delivery_estimate;
+    return `${where} (fee to be confirmed when packed${est ? `, about ${kwacha(est)}` : ''})`;
+  }
+  const size = SIZE_LABEL[order.parcel_size];
+  return `${where}${size ? `, ${size} parcel` : ''} - ${kwacha(order.delivery_fee)}`;
 }
 
 export const METHOD_LABEL = {

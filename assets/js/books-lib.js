@@ -8,7 +8,7 @@ export const EXPENSE_CATEGORIES = {
   setup: 'Shop setup (one-off)',
   rent: 'Rent',
   transport: 'Transport & fuel',
-  delivery: 'Delivery & courier',
+  delivery: 'Delivery & courier (our own)',
   packaging: 'Packaging & shop supplies',
   phone: 'Phone, data & internet',
   ads: 'Advertising & printing',
@@ -236,9 +236,9 @@ export function booksCsv(month, entries) {
   row('Summary', 'Kwacha');
   row('Toy sales (website)', m.online_sales ?? 0);
   row('Toy sales (shop)', m.shop_sales ?? 0);
-  row('Delivery and packaging fees', m.delivery ?? 0);
   row('Other money in', m.income ?? 0);
-  row('Turnover', m.turnover ?? 0);
+  row('Turnover (toys and other money in)', m.turnover ?? 0);
+  row('Delivery fees passed on to couriers (not income)', m.delivery ?? 0);
   row('Stock bought', m.stock ?? 0);
   row('Running costs', m.expenses ?? 0);
   row('Shop setup (one-off)', m.setup ?? 0);

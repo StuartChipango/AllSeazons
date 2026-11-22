@@ -1,6 +1,6 @@
 import { supabase, imageUrl, friendlyError, configured } from './db.js';
 import {
-  esc, kwacha, effectivePrice, isSpecial, parcelSize, courierFee, waLink, orderMessage,
+  esc, kwacha, effectivePrice, isSpecial, courierEstimate, waLink, orderMessage,
   CONDITIONS, AGES, PAYMENTS, timeLabel, storagePolicy, waitsAtShop, upsellPicks,
 } from './lib.js';
 import { track } from './track.js';
@@ -565,16 +565,15 @@ function cartTotals(lines) {
   const count = ok.reduce((s, l) => s + l.qty, 0);
   const subtotal = ok.reduce((s, l) => s + effectivePrice(l.toy) * l.qty, 0);
   const c = state.customer;
-  const size = parcelSize(count, state.settings);
-  let fee = 0;
-  let feeKnown = true;
+  // Out of town: only a suggestion. The courier charges by parcel size,
+  // so we confirm the real fee on WhatsApp once the toys are packed.
+  // The total is the toys; delivery is added when it is known.
+  let estimate = null;
   if (c.location === 'out_of_town') {
     const town = state.towns.find((t) => String(t.id) === String(c.town_id));
-    const courier = courierFee(town, size);
-    feeKnown = courier !== null;
-    fee = feeKnown ? courier + packagingFee() : 0;
+    estimate = courierEstimate(town, packagingFee());
   }
-  return { ok, count, subtotal, size, fee, feeKnown, total: subtotal + fee };
+  return { ok, count, subtotal, estimate, total: subtotal };
 }
 
 function openCart() {
@@ -615,7 +614,7 @@ function renderCart() {
         <p>We are holding your toys until <strong>${esc(timeLabel(o.order.hold_until))}</strong>.
           Send the order on WhatsApp so we can confirm it.</p>
         <a class="btn wa block big" id="waGo" href="${esc(o.link)}" target="_blank" rel="noopener">Send order on WhatsApp</a>
-        <p class="pay-how">Total to pay: <strong>${kwacha(o.order.total)}</strong>${PAYMENTS[o.order.payment] ? `<br>${esc(PAYMENTS[o.order.payment].how)}` : ''}</p>
+        <p class="pay-how">Total to pay: <strong>${kwacha(o.order.total)}${o.order.delivery_method === 'courier' && o.order.delivery_fee == null ? ' + courier fee' : ''}</strong>${o.order.delivery_method === 'courier' && o.order.delivery_fee == null ? '<br>We tell you the courier fee on WhatsApp once your toys are packed.' : ''}${PAYMENTS[o.order.payment] ? `<br>${esc(PAYMENTS[o.order.payment].how)}` : ''}</p>
         ${waitsAtShop(o.order.delivery_method) ? `<p class="policy-note">${esc(storagePolicy())}</p>` : ''}
         <img class="mascot" src="assets/img/mascots/spri.webp" alt="" width="80" height="95" loading="lazy" decoding="async">
         <button class="btn ghost block" id="keepShopping">Keep shopping</button>
@@ -647,7 +646,6 @@ function renderCart() {
   const s = state.settings;
   const how = c.location === 'out_of_town' ? 'courier' : c.delivery_method;
   const town = state.towns.find((x) => String(x.id) === String(c.town_id));
-  const sizeText = `${t.size} parcel`;
   const pays = Object.entries(PAYMENTS).filter(([k]) => k !== 'cash' || how === 'pickup');
   if (!pays.some(([k]) => k === c.payment)) c.payment = 'mtn';
   body.innerHTML = `
@@ -677,7 +675,7 @@ function renderCart() {
           </select>
           <small>Not listed? Message us on WhatsApp.</small>
         </label>
-        ${town ? `<p class="fee-note">Courier${town.courier ? ` (${esc(town.courier)})` : ''} to ${esc(town.name)}, ${sizeText}: ${t.feeKnown ? `<strong>${kwacha(t.fee)}</strong>${packagingFee() ? ` (courier ${kwacha(t.fee - packagingFee())} + packing and drop-off ${kwacha(packagingFee())})` : ''}` : 'fee confirmed on WhatsApp'}.${s.courier_note ? ' ' + esc(s.courier_note) : ''}</p>` : ''}
+        ${town ? `<p class="fee-note">Courier${town.courier ? ` (${esc(town.courier)})` : ''} to ${esc(town.name)}: ${t.estimate !== null ? `about <strong>${kwacha(t.estimate)}</strong>${packagingFee() ? ` (includes ${kwacha(packagingFee())} packing and drop-off)` : ''}` : 'fee confirmed on WhatsApp'}. The courier charges by parcel size, so we confirm the exact fee once your toys are packed.${s.courier_note ? ' ' + esc(s.courier_note) : ''}</p>` : ''}
       ` : ''}
       <div class="field"><span>How will you pay after we confirm?</span>
         <div class="pays">${pays.map(([k, p]) => `<button type="button" class="chip" data-set="payment" data-value="${k}" aria-pressed="${c.payment === k}">${esc(p.label)}</button>`).join('')}</div>
@@ -688,15 +686,15 @@ function renderCart() {
       </details>
       <div class="totals">
         <div><span>Toys</span><span>${kwacha(t.subtotal)}</span></div>
-        <div><span>Delivery</span><span>${how === 'pickup' ? 'Free' : how === 'yango' ? 'Paid to driver' : t.feeKnown && town ? kwacha(t.fee) : 'To confirm'}</span></div>
-        <div class="grand"><span>Total</span><span>${kwacha(t.total)}</span></div>
+        <div><span>Delivery</span><span>${how === 'pickup' ? 'Free' : how === 'yango' ? 'Paid to driver' : t.estimate !== null && town ? `About ${kwacha(t.estimate)}, confirmed later` : 'To confirm'}</span></div>
+        <div class="grand"><span>Total</span><span>${kwacha(t.total)}${how === 'courier' ? ' + delivery' : ''}</span></div>
       </div>
       ${waitsAtShop(how) ? `<p class="policy-note"><b>⏱ Collection rule</b> ${esc(storagePolicy())}</p>` : ''}
       <p class="error-text" id="checkoutError" role="alert"></p>
       <div class="send-bar">
         <button class="btn wa block big" type="submit" id="placeOrder" ${state.busy ? 'disabled' : ''}>
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-11.7 7.1L4 20l1-4A8 8 0 1 1 20 12z"/></svg>
-          ${state.busy ? 'Holding your toys…' : `Send my order on WhatsApp · ${kwacha(t.total)}`}
+          ${state.busy ? 'Holding your toys…' : `Send my order on WhatsApp · ${kwacha(t.total)}${how === 'courier' ? ' + delivery' : ''}`}
         </button>
         <p>We hold your toys for ${Math.round((s.hold_minutes || 120) / 60 * 10) / 10} hours while we confirm.</p>
       </div>

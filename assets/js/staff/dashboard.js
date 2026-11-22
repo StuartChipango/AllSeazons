@@ -56,7 +56,7 @@ export async function show(main) {
     ? supabase.rpc('traffic_report', { p_days: 1 }).then((r) => r.data?.totals ?? null, () => null)
     : Promise.resolve(null);
   const [week, open, toPack, live, review, soldItems, slow, fresh] = await Promise.all([
-    supabase.from('orders').select('total, channel').in('status', ['paid', 'packed', 'sent', 'delivered']).gte('paid_at', since),
+    supabase.from('orders').select('subtotal, channel').in('status', ['paid', 'packed', 'sent', 'delivered']).gte('paid_at', since),
     supabase.from('orders').select('id', { count: 'exact', head: true }).in('status', ['held', 'confirmed']),
     supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'paid'),
     supabase.from('toys').select('id', { count: 'exact', head: true }).eq('status', 'available'),
@@ -71,7 +71,8 @@ export async function show(main) {
 
   const visits = await visitorsToday;
   const bk = await books;
-  const sales = (week.data || []).reduce((s, o) => s + o.total, 0);
+  // Toys only: delivery and packaging money goes to the courier, not to us.
+  const sales = (week.data || []).reduce((s, o) => s + o.subtotal, 0);
   const goal = shared.settings?.weekly_goal || 0;
   const items = soldItems.data || [];
   const byCategory = countBy(items, (x) => x.toys?.category || 'Not set').slice(0, 8);

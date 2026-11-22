@@ -57,7 +57,7 @@ Sign in at the staff app and open **Settings**:
 
 - **WhatsApp Business number**: orders are sent here.
 - **Price tiers**: K50, K75, K100… whatever you use.
-- **Towns**: the out-of-town list with each courier and its small, medium and large fee. A blank fee shows "fee confirmed on WhatsApp".
+- **Towns**: the out-of-town list with each courier and its small, medium and large fee. At checkout the customer only sees a suggestion (the lowest fee plus packaging); whoever confirms the order picks the parcel size on the order card, which sets the real fee. A town with no fees shows "fee confirmed on WhatsApp". Delivery fees are passed on to the courier and never count as sales, in the Books or anywhere else.
 - **Notes** for pickup, Yango and courier, and the banner at the top of the shop.
 - **Staff**: add other staff here after creating their login (step 1.3).
 
