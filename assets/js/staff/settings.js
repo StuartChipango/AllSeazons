@@ -3,6 +3,7 @@ import { supabase, friendlyError } from '../db.js';
 import { shared, can, ROLE_LABELS } from './app.js';
 import { $, $$, toast, confirmBox, busy, seg } from './ui.js';
 import { prefs, setPref } from './prefs.js';
+import { alertsHtml, wireAlerts } from './alerts.js';
 
 let root = null;
 
@@ -59,10 +60,12 @@ function accountHtml() {
         <button class="btn small" type="submit">Change my password</button>
       </form>
       <div class="row-actions" style="justify-content:flex-start;margin-top:8px"><button class="btn small ghost" id="signOutHere" type="button">Sign out (switch person)</button></div>
-    </section>`;
+    </section>
+    ${alertsHtml()}`;
 }
 
 function wireAccount() {
+  wireAlerts(root);
   $('#signOutHere', root).onclick = () => document.getElementById('signOut').click();
   $('#myPassword', root).onsubmit = async (e) => {
     e.preventDefault();
