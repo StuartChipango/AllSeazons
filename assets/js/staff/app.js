@@ -1,5 +1,6 @@
 import { supabase, configured, friendlyError } from '../db.js';
 import { $, $$, toast, closePanel, keepFiles } from './ui.js';
+import { startWorker, playChaChing } from './alerts.js';
 
 // Shared lookups every page uses, loaded once after sign-in.
 export const ROLE_LABELS = { owner: 'Owner', stock: 'Stock', sales: 'Sales' };
@@ -114,7 +115,28 @@ async function showApp() {
   $('#app').hidden = false;
   supabase.rpc('release_expired_holds').then(() => {}, () => {});
   route();
+  startWorker();
 }
+
+// A sale alert arrived while the app is open: cha-ching, and refresh.
+const seenAlerts = new Set();
+navigator.serviceWorker?.addEventListener('message', (e) => {
+  const m = e.data || {};
+  if (m.type === 'open') {
+    const hash = new URL(m.url).hash;
+    if (hash && location.hash !== hash) location.hash = hash; else if (shared.me) route();
+    return;
+  }
+  if (m.type !== 'sale-alert' || !shared.me) return;
+  if (m.tag && m.tag !== 'test') {
+    if (seenAlerts.has(m.tag)) return;
+    seenAlerts.add(m.tag);
+  }
+  if (document.visibilityState === 'visible') playChaChing();
+  toast(m.title || 'New order');
+  const page = location.hash.slice(1).split('?')[0] || 'home';
+  if (page === 'orders' || page === 'home') route(); else refreshBadges();
+});
 
 function showLogin(message = '') {
   $('#app').hidden = true;
