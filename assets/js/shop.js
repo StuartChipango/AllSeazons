@@ -4,6 +4,7 @@ import {
   CONDITIONS, AGES, PAYMENTS, timeLabel, storagePolicy, waitsAtShop, upsellPicks,
 } from './lib.js';
 import { track } from './track.js';
+import { scoreToy, searchToys, wireSearchBox } from './search.js';
 
 const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,is_featured,quantity,status,image_path,photo_path,thumb_path,media,created_at,approved_at,sold_at';
 const $ = (sel) => document.querySelector(sel);
@@ -220,7 +221,7 @@ function describe() {
   return parts.join(' ') + (more.length ? `, ${more.join(', ')}` : '');
 }
 
-function matches(t, { ignoreCategory = false } = {}) {
+function matches(t, { ignoreCategory = false, noSearch = false } = {}) {
   const f = state.filter;
   // Toys for boys and girls suit both, so they show for either.
   if (f.who === 'boy' && !['boys', 'neutral'].includes(t.audience)) return false;
@@ -230,10 +231,8 @@ function matches(t, { ignoreCategory = false } = {}) {
   if (!ignoreCategory && f.category && t.category !== f.category) return false;
   if (f.age && t.age_range !== f.age) return false;
   if (f.budget && effectivePrice(t) > f.budget) return false;
-  if (f.q) {
-    const hay = `${t.name} ${t.brand || ''} ${t.category || ''} ${t.code}`.toLowerCase();
-    if (!f.q.toLowerCase().split(/\s+/).every((w) => hay.includes(w))) return false;
-  }
+  // Forgiving search: spelling slips, plurals and related words (search.js).
+  if (f.q && !noSearch && !scoreToy(t, f.q)) return false;
   return true;
 }
 
@@ -323,7 +322,15 @@ function buildSections() {
   const sold = sorted(state.sold.filter((t) => matches(t)));
   const soldSection = { key: 'sold', title: 'Found new homes', icon: '💛', toys: sold, sold: true,
     note: `${state.soldCount ?? state.sold.length} toys have found new homes. This is the kind of thing we stock. Message us if you want something similar!` };
-  if (f.q) return [{ key: 'search', title: `Results for “${f.q}”`, icon: '🔎', toys: list, main: true, clear: true }, soldSection];
+  if (f.q) {
+    // Best matches first (unless the shopper picked a price order). If no toy
+    // has every word, the closest toys show instead of nothing.
+    const found = searchToys(state.toys.filter((t) => matches(t, { noSearch: true })), f.q);
+    const toys = f.sort === 'new' ? found.toys : sorted(found.toys);
+    const title = found.close ? `Nothing exactly like “${f.q}”. Closest toys:` : `Results for “${f.q}”`;
+    const soldFound = searchToys(state.sold.filter((t) => matches(t, { noSearch: true })), f.q);
+    return [{ key: 'search', title, icon: '🔎', toys, main: true, clear: true }, { ...soldSection, toys: soldFound.close ? [] : soldFound.toys }];
+  }
   if (isFiltered()) return [{ key: 'pick', title: describe(), icon: f.category ? likeIcon(f.category) : '🎁', toys: list, main: true, clear: true }, soldSection];
   const sections = [];
   sections.push({ key: 'all', title: 'All toys', icon: '🎁', toys: list, main: true });
@@ -801,7 +808,7 @@ document.addEventListener('click', (e) => {
     render({ reset: true });
   } else if (el.dataset.clear !== undefined) {
     Object.assign(state.filter, { who: '', category: '', age: '', condition: '', budget: 0, sort: 'new', q: '' });
-    $('#search').value = '';
+    searchBox.set('');
     render({ reset: true });
     $('#moreChoices').hidden = true;
     renderPicks();
@@ -883,17 +890,16 @@ document.addEventListener('submit', (e) => {
   }
 });
 
-let searchTimer;
-$('#search').addEventListener('input', (e) => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    const was = state.filter.q;
-    state.filter.q = e.target.value.trim();
-    render({ reset: true });
-    // The picture buttons fold away while searching: start at the results.
-    if (Boolean(was) !== Boolean(state.filter.q)) scrollTo({ top: 0 });
-  }, 150);
-});
+// Search runs only when the shopper presses Search / Enter or taps out of the
+// box, never while they type, so spaces and backspaces are never lost.
+const searchBox = wireSearchBox($('#search'), (text) => {
+  const was = state.filter.q;
+  state.filter.q = text;
+  unfolded.delete('search');
+  render({ reset: true });
+  // The picture buttons fold away while searching: start at the results.
+  if (Boolean(was) !== Boolean(state.filter.q) || text) scrollTo({ top: 0 });
+}, { button: $('#searchGo') });
 
 $('#toyDialog').addEventListener('close', () => {
   if (location.hash) history.replaceState(null, '', location.pathname + location.search);

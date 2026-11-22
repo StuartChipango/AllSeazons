@@ -4,6 +4,7 @@ import { esc, kwacha, effectivePrice, waLink, PAYMENTS, timeLabel } from '../lib
 import { supabase, imageUrl, friendlyError } from '../db.js';
 import { refreshBadges } from './app.js';
 import { $, $$, openPanel, busy } from './ui.js';
+import { searchToys, wireSearchBox } from '../search.js';
 
 const SHOW = 60;
 let root = null;
@@ -32,15 +33,12 @@ const thumb = (t) => imageUrl(t.thumb_path || t.photo_path || t.image_path);
 const chosen = () => toys.filter((t) => picked.has(t.id));
 const total = () => chosen().reduce((s, t) => s + effectivePrice(t), 0);
 
-function matches(t) {
-  if (!q) return true;
-  const hay = `${t.name} ${t.code}`.toLowerCase();
-  return q.toLowerCase().split(/\s+/).every((w) => hay.includes(w));
-}
 
 function gridHtml() {
   // Picked toys stay on top so they are easy to un-pick.
-  const list = [...chosen(), ...toys.filter((t) => !picked.has(t.id) && matches(t))].slice(0, SHOW);
+  // Forgiving search (spelling slips, related words), best matches first.
+  const rest = toys.filter((t) => !picked.has(t.id));
+  const list = [...chosen(), ...(q ? searchToys(rest, q).toys : rest)].slice(0, SHOW);
   return list.map((t) => `
     <button type="button" class="pick" data-pick="${t.id}" aria-pressed="${picked.has(t.id)}">
       <img src="${esc(thumb(t))}" alt="" loading="lazy" decoding="async" width="160" height="160">
@@ -60,15 +58,12 @@ function render() {
     <div class="page-head"><a class="back" href="#orders" aria-label="Back">‹</a>
       <h1>${mode === 'wa' ? 'WhatsApp order' : 'Shop sale'}</h1></div>
     <p class="lead">${mode === 'wa' ? 'Tap the toys the customer asked for. They are held for them until they pay.' : 'Tap the toys the customer is buying. Search by name or the code on the tag.'}</p>
-    <div class="toolbar"><input type="search" id="pq" placeholder="Search name or code" value="${esc(q)}" autocomplete="off"></div>
+    <div class="toolbar"><input type="search" id="pq" placeholder="Search name or code" value="${esc(q)}" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
     <div class="pick-grid" id="pickGrid">${gridHtml()}</div>
     <div class="sale-bar" id="saleBar" ${picked.size ? '' : 'hidden'}>${barHtml()}</div>
     <div style="height:90px"></div>`;
-  let timer;
-  $('#pq', root).oninput = (e) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => { q = e.target.value.trim(); $('#pickGrid', root).innerHTML = gridHtml(); }, 120);
-  };
+  // Search runs on Search / Enter or when the box is left, never while typing.
+  wireSearchBox($('#pq', root), (text) => { q = text; $('#pickGrid', root).innerHTML = gridHtml(); });
   root.onclick = (e) => {
     const b = e.target.closest('[data-pick]');
     if (b) {
