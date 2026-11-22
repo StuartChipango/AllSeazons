@@ -236,7 +236,8 @@ test('checkout sends a labelled order to WhatsApp and holds the toys', async () 
   await shopper.getByText('Please enter your delivery address.').waitFor();
   await shopper.getByRole('button', { name: /Out of town/ }).click();
   await shopper.selectOption('#checkout [name=town_id]', { label: 'Kitwe' });
-  await shopper.getByText(/medium parcel/).waitFor();
+  // Only a suggestion: Kitwe's lowest fee (K60) + K40 packaging. Staff set the real fee.
+  await shopper.locator('.fee-note', { hasText: 'about K100' }).waitFor();
   await shopper.getByText('Add a note or collection point').click();
   await shopper.fill('#checkout [name=address]', 'Collect at Mazhandu Kitwe');
   await shot(shopper, '04-checkout');
@@ -250,8 +251,8 @@ test('checkout sends a labelled order to WhatsApp and holds the toys', async () 
   assert.match(msg, /\*NEW ORDER ORD-1001\*/);
   assert.match(msg, /Big Brown Teddy \(AS-\d+\) - Used - K70/);
   assert.match(msg, /Red Race Car \(AS-\d+\) - Used - K70/);
-  assert.match(msg, /\*Delivery:\* Courier to Kitwe via Mazhandu, medium parcel - K130/);
-  assert.match(msg, /\*TOTAL TO PAY:\* K270/);
+  assert.match(msg, /\*Delivery:\* Courier to Kitwe via Mazhandu \(fee to be confirmed when packed, about K100\)/);
+  assert.match(msg, /\*TOTAL TO PAY:\* K140 \+ courier fee/);
   assert.match(msg, /\*Name:\* Mwila Phiri/);
   assert.match(msg, /\*Address:\* Collect at Mazhandu Kitwe/);
   const pictures = msg.match(/Pictures of my toys:\* (\S+)/)[1];
@@ -272,6 +273,9 @@ test('staff mark the order paid and print the sticker', async () => {
   const card = staff.locator('.order', { hasText: 'ORD-1001' });
   await card.waitFor();
   await shot(staff, '07-orders');
+  // Whoever confirms picks the parcel size; the fee goes to the courier, not sales.
+  await card.getByRole('button', { name: 'Medium K130' }).click();
+  await staff.getByText('ORD-1001: courier fee K130, customer pays K270').waitFor();
   await card.getByRole('button', { name: 'Mark paid' }).click();
   await staff.getByText('ORD-1001: Paid').waitFor();
   await staff.getByRole('button', { name: /To pack/ }).click();

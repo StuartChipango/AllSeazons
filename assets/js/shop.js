@@ -1,9 +1,10 @@
 import { supabase, imageUrl, friendlyError, configured } from './db.js';
 import {
-  esc, kwacha, effectivePrice, isSpecial, isNewStock, parcelSize, courierFee, waLink, orderMessage,
+  esc, kwacha, effectivePrice, isSpecial, isNewStock, courierEstimate, waLink, orderMessage,
   CONDITIONS, AGES, PAYMENTS, timeLabel, storagePolicy, waitsAtShop, upsellPicks,
 } from './lib.js';
 import { track } from './track.js';
+import { scoreToy, searchToys, wireSearchBox } from './search.js';
 
 const TOY_COLUMNS = 'id,code,name,audience,condition,category,age_range,brand,description,price,sale_price,is_special,is_featured,quantity,status,image_path,photo_path,thumb_path,media,created_at,approved_at,sold_at,restocked_at';
 const $ = (sel) => document.querySelector(sel);
@@ -220,7 +221,7 @@ function describe() {
   return parts.join(' ') + (more.length ? `, ${more.join(', ')}` : '');
 }
 
-function matches(t, { ignoreCategory = false } = {}) {
+function matches(t, { ignoreCategory = false, noSearch = false } = {}) {
   const f = state.filter;
   // Toys for boys and girls suit both, so they show for either.
   if (f.who === 'boy' && !['boys', 'neutral'].includes(t.audience)) return false;
@@ -230,10 +231,8 @@ function matches(t, { ignoreCategory = false } = {}) {
   if (!ignoreCategory && f.category && t.category !== f.category) return false;
   if (f.age && t.age_range !== f.age) return false;
   if (f.budget && effectivePrice(t) > f.budget) return false;
-  if (f.q) {
-    const hay = `${t.name} ${t.brand || ''} ${t.category || ''} ${t.code}`.toLowerCase();
-    if (!f.q.toLowerCase().split(/\s+/).every((w) => hay.includes(w))) return false;
-  }
+  // Forgiving search: spelling slips, plurals and related words (search.js).
+  if (f.q && !noSearch && !scoreToy(t, f.q)) return false;
   return true;
 }
 
@@ -324,7 +323,15 @@ function buildSections() {
   const sold = sorted(state.sold.filter((t) => matches(t)));
   const soldSection = { key: 'sold', title: 'Found new homes', icon: '💛', toys: sold, sold: true,
     note: `${state.soldCount ?? state.sold.length} toys have found new homes. This is the kind of thing we stock. Message us if you want something similar!` };
-  if (f.q) return [{ key: 'search', title: `Results for “${f.q}”`, icon: '🔎', toys: list, main: true, clear: true }, soldSection];
+  if (f.q) {
+    // Best matches first (unless the shopper picked a price order). If no toy
+    // has every word, the closest toys show instead of nothing.
+    const found = searchToys(state.toys.filter((t) => matches(t, { noSearch: true })), f.q);
+    const toys = f.sort === 'new' ? found.toys : sorted(found.toys);
+    const title = found.close ? `Nothing exactly like “${f.q}”. Closest toys:` : `Results for “${f.q}”`;
+    const soldFound = searchToys(state.sold.filter((t) => matches(t, { noSearch: true })), f.q);
+    return [{ key: 'search', title, icon: '🔎', toys, main: true, clear: true }, { ...soldSection, toys: soldFound.close ? [] : soldFound.toys }];
+  }
   if (isFiltered()) return [{ key: 'pick', title: describe(), icon: f.category ? likeIcon(f.category) : '🎁', toys: list, main: true, clear: true }, soldSection];
   const sections = [];
   sections.push({ key: 'all', title: 'All toys', icon: '🎁', toys: list, main: true });
@@ -567,16 +574,15 @@ function cartTotals(lines) {
   const count = ok.reduce((s, l) => s + l.qty, 0);
   const subtotal = ok.reduce((s, l) => s + effectivePrice(l.toy) * l.qty, 0);
   const c = state.customer;
-  const size = parcelSize(count, state.settings);
-  let fee = 0;
-  let feeKnown = true;
+  // Out of town: only a suggestion. The courier charges by parcel size,
+  // so we confirm the real fee on WhatsApp once the toys are packed.
+  // The total is the toys; delivery is added when it is known.
+  let estimate = null;
   if (c.location === 'out_of_town') {
     const town = state.towns.find((t) => String(t.id) === String(c.town_id));
-    const courier = courierFee(town, size);
-    feeKnown = courier !== null;
-    fee = feeKnown ? courier + packagingFee() : 0;
+    estimate = courierEstimate(town, packagingFee());
   }
-  return { ok, count, subtotal, size, fee, feeKnown, total: subtotal + fee };
+  return { ok, count, subtotal, estimate, total: subtotal };
 }
 
 function openCart() {
@@ -617,7 +623,7 @@ function renderCart() {
         <p>We are holding your toys until <strong>${esc(timeLabel(o.order.hold_until))}</strong>.
           Send the order on WhatsApp so we can confirm it.</p>
         <a class="btn wa block big" id="waGo" href="${esc(o.link)}" target="_blank" rel="noopener">Send order on WhatsApp</a>
-        <p class="pay-how">Total to pay: <strong>${kwacha(o.order.total)}</strong>${PAYMENTS[o.order.payment] ? `<br>${esc(PAYMENTS[o.order.payment].how)}` : ''}</p>
+        <p class="pay-how">Total to pay: <strong>${kwacha(o.order.total)}${o.order.delivery_method === 'courier' && o.order.delivery_fee == null ? ' + courier fee' : ''}</strong>${o.order.delivery_method === 'courier' && o.order.delivery_fee == null ? '<br>We tell you the courier fee on WhatsApp once your toys are packed.' : ''}${PAYMENTS[o.order.payment] ? `<br>${esc(PAYMENTS[o.order.payment].how)}` : ''}</p>
         ${waitsAtShop(o.order.delivery_method) ? `<p class="policy-note">${esc(storagePolicy())}</p>` : ''}
         <img class="mascot" src="assets/img/mascots/spri.webp" alt="" width="80" height="95" loading="lazy" decoding="async">
         <button class="btn ghost block" id="keepShopping">Keep shopping</button>
@@ -649,7 +655,6 @@ function renderCart() {
   const s = state.settings;
   const how = c.location === 'out_of_town' ? 'courier' : c.delivery_method;
   const town = state.towns.find((x) => String(x.id) === String(c.town_id));
-  const sizeText = `${t.size} parcel`;
   const pays = Object.entries(PAYMENTS).filter(([k]) => k !== 'cash' || how === 'pickup');
   if (!pays.some(([k]) => k === c.payment)) c.payment = 'mtn';
   body.innerHTML = `
@@ -679,7 +684,7 @@ function renderCart() {
           </select>
           <small>Not listed? Message us on WhatsApp.</small>
         </label>
-        ${town ? `<p class="fee-note">Courier${town.courier ? ` (${esc(town.courier)})` : ''} to ${esc(town.name)}, ${sizeText}: ${t.feeKnown ? `<strong>${kwacha(t.fee)}</strong>${packagingFee() ? ` (courier ${kwacha(t.fee - packagingFee())} + packing and drop-off ${kwacha(packagingFee())})` : ''}` : 'fee confirmed on WhatsApp'}.${s.courier_note ? ' ' + esc(s.courier_note) : ''}</p>` : ''}
+        ${town ? `<p class="fee-note">Courier${town.courier ? ` (${esc(town.courier)})` : ''} to ${esc(town.name)}: ${t.estimate !== null ? `about <strong>${kwacha(t.estimate)}</strong>${packagingFee() ? ` (includes ${kwacha(packagingFee())} packing and drop-off)` : ''}` : 'fee confirmed on WhatsApp'}. The courier charges by parcel size, so we confirm the exact fee once your toys are packed.${s.courier_note ? ' ' + esc(s.courier_note) : ''}</p>` : ''}
       ` : ''}
       <div class="field"><span>How will you pay after we confirm?</span>
         <div class="pays">${pays.map(([k, p]) => `<button type="button" class="chip" data-set="payment" data-value="${k}" aria-pressed="${c.payment === k}">${esc(p.label)}</button>`).join('')}</div>
@@ -690,15 +695,15 @@ function renderCart() {
       </details>
       <div class="totals">
         <div><span>Toys</span><span>${kwacha(t.subtotal)}</span></div>
-        <div><span>Delivery</span><span>${how === 'pickup' ? 'Free' : how === 'yango' ? 'Paid to driver' : t.feeKnown && town ? kwacha(t.fee) : 'To confirm'}</span></div>
-        <div class="grand"><span>Total</span><span>${kwacha(t.total)}</span></div>
+        <div><span>Delivery</span><span>${how === 'pickup' ? 'Free' : how === 'yango' ? 'Paid to driver' : t.estimate !== null && town ? `About ${kwacha(t.estimate)}, confirmed later` : 'To confirm'}</span></div>
+        <div class="grand"><span>Total</span><span>${kwacha(t.total)}${how === 'courier' ? ' + delivery' : ''}</span></div>
       </div>
       ${waitsAtShop(how) ? `<p class="policy-note"><b>⏱ Collection rule</b> ${esc(storagePolicy())}</p>` : ''}
       <p class="error-text" id="checkoutError" role="alert"></p>
       <div class="send-bar">
         <button class="btn wa block big" type="submit" id="placeOrder" ${state.busy ? 'disabled' : ''}>
           <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M20 12a8 8 0 0 1-11.7 7.1L4 20l1-4A8 8 0 1 1 20 12z"/></svg>
-          ${state.busy ? 'Holding your toys…' : `Send my order on WhatsApp · ${kwacha(t.total)}`}
+          ${state.busy ? 'Holding your toys…' : `Send my order on WhatsApp · ${kwacha(t.total)}${how === 'courier' ? ' + delivery' : ''}`}
         </button>
         <p>We hold your toys for ${Math.round((s.hold_minutes || 120) / 60 * 10) / 10} hours while we confirm.</p>
       </div>
@@ -803,7 +808,7 @@ document.addEventListener('click', (e) => {
     render({ reset: true });
   } else if (el.dataset.clear !== undefined) {
     Object.assign(state.filter, { who: '', category: '', age: '', condition: '', budget: 0, sort: 'new', q: '' });
-    $('#search').value = '';
+    searchBox.set('');
     render({ reset: true });
     $('#moreChoices').hidden = true;
     renderPicks();
@@ -885,17 +890,16 @@ document.addEventListener('submit', (e) => {
   }
 });
 
-let searchTimer;
-$('#search').addEventListener('input', (e) => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    const was = state.filter.q;
-    state.filter.q = e.target.value.trim();
-    render({ reset: true });
-    // The picture buttons fold away while searching: start at the results.
-    if (Boolean(was) !== Boolean(state.filter.q)) scrollTo({ top: 0 });
-  }, 150);
-});
+// Search runs only when the shopper presses Search / Enter or taps out of the
+// box, never while they type, so spaces and backspaces are never lost.
+const searchBox = wireSearchBox($('#search'), (text) => {
+  const was = state.filter.q;
+  state.filter.q = text;
+  unfolded.delete('search');
+  render({ reset: true });
+  // The picture buttons fold away while searching: start at the results.
+  if (Boolean(was) !== Boolean(state.filter.q) || text) scrollTo({ top: 0 });
+}, { button: $('#searchGo') });
 
 $('#toyDialog').addEventListener('close', () => {
   if (location.hash) history.replaceState(null, '', location.pathname + location.search);

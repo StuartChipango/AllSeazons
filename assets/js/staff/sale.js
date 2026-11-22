@@ -6,6 +6,7 @@ import { esc, kwacha, effectivePrice, waLink, PAYMENTS, timeLabel, isNewStock } 
 import { supabase, imageUrl, friendlyError } from '../db.js';
 import { refreshBadges, shared, can } from './app.js';
 import { $, $$, openPanel, closePanel, busy, toast } from './ui.js';
+import { searchToys, wireSearchBox } from '../search.js';
 
 // Tiles are added in pages as you scroll, so a long list stays quick.
 const PAGE = 90;
@@ -58,30 +59,26 @@ const chosen = () => toys.filter((t) => picked.has(t.id));
 const total = () => chosen().reduce((s, t) => s + effectivePrice(t), 0);
 const short = (label) => label.split(/\s*[&,/]\s*/)[0];
 
-function matchesSearch(t) {
-  if (!q) return true;
-  const hay = `${t.name} ${t.code} ${t.brand || ''} ${t.category || ''} ${t.legacy_id || ''}`.toLowerCase();
-  return q.toLowerCase().split(/\s+/).every((w) => hay.includes(w));
-}
+// Forgiving search (spelling slips, related words), best matches first.
+const searched = (list) => (q ? searchToys(list, q).toys : list);
 
 function listNow() {
-  if (cat === SOLD_OUT) return soldOut.filter(matchesSearch);
-  return toys.filter((t) => matchesSearch(t) && (!cat || t.category === cat));
+  if (cat === SOLD_OUT) return searched(soldOut);
+  return searched(cat ? toys.filter((t) => t.category === cat) : toys);
 }
 
 // One small row of chips: All, each toy type that has toys, then Sold out.
 function chipsHtml() {
   const counts = new Map();
   let n = 0;
-  for (const t of toys) {
-    if (!matchesSearch(t)) continue;
+  for (const t of searched(toys)) {
     n++;
     if (t.category) counts.set(t.category, (counts.get(t.category) || 0) + 1);
   }
   const known = shared.categories.filter((c) => counts.has(c) || c === cat);
   const extra = [...counts.keys()].filter((c) => !known.includes(c));
   const chip = (value, label, k) => `<button type="button" class="chip" data-cat="${esc(value)}" aria-pressed="${cat === value}">${esc(label)} <b>${k}</b></button>`;
-  const sold = soldOut.filter(matchesSearch).length;
+  const sold = searched(soldOut).length;
   return chip('', 'All', n)
     + [...known, ...extra].map((c) => chip(c, short(c), counts.get(c) || 0)).join('')
     + chip(SOLD_OUT, 'Sold out', sold);
@@ -161,19 +158,15 @@ function render() {
     <div class="page-head"><a class="back" href="#orders" aria-label="Back">‹</a>
       <h1>${mode === 'wa' ? 'WhatsApp order' : 'Shop sale'}</h1></div>
     <p class="lead">${mode === 'wa' ? 'Tap the toys the customer asked for. They are held for them until they pay.' : 'Tap the toys the customer is buying. Search by name or the code on the tag.'}</p>
-    <div class="toolbar sale-search"><input type="search" id="pq" placeholder="Search name or code" value="${esc(q)}" autocomplete="off"></div>
+    <div class="toolbar sale-search"><input type="search" id="pq" placeholder="Search name or code" value="${esc(q)}" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
     <div class="chip-row" id="saleChips" role="group" aria-label="Toy type">${chipsHtml()}</div>
     <p class="pick-count" id="pickCount">${countHtml()}</p>
     <div class="pick-grid" id="pickGrid">${gridHtml()}</div>
     <div id="pickEnd"></div>
     <div class="sale-bar" id="saleBar" ${picked.size ? '' : 'hidden'}>${barHtml()}</div>
     <div style="height:90px"></div>`;
-  let timer;
-  $('#pq', root).oninput = (e) => {
-    clearTimeout(timer);
-    timer = setTimeout(() => { q = e.target.value.trim(); refresh(); }, 150);
-  };
-  watchEnd();
+  // Search runs on Search / Enter or when the box is left, never while typing.
+  wireSearchBox($('#pq', root), (text) => { q = text; refresh(); });
   root.onclick = (e) => {
     const c = e.target.closest('[data-cat]');
     if (c) {
@@ -329,7 +322,7 @@ function waPanel() {
     const msg = [
       `Hi ${customer.name}! Your All Seazons order ${data.code} is held for you until ${timeLabel(data.hold_until)}.`, '',
       ...(data.items || []).map((it, i) => `${i + 1}. ${it.name} - ${kwacha(it.price * (it.qty || 1))}`), '',
-      `*Total: ${kwacha(data.total)}*${data.delivery_method === 'courier' && data.delivery_fee == null ? ' + courier fee' : ''}`, '',
+      `*Total: ${kwacha(data.total)}*${data.delivery_method === 'courier' && data.delivery_fee == null ? ` + courier fee${data.delivery_estimate ? ` (about ${kwacha(data.delivery_estimate)}, we confirm it once your toys are packed)` : ' (we confirm it once your toys are packed)'}` : ''}`, '',
       'You can pay with:', pay, '',
       'Send us the payment message and we will get your toys ready. Thank you!',
     ].join('\n');

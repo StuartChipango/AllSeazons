@@ -165,6 +165,7 @@ sent_at timestamptz,
 delivered_at timestamptz,
 updated_at timestamptz not null default now()
 );
+alter table public.orders add column if not exists delivery_estimate int;
 create index if not exists orders_status_idx on public.orders (status);
 create index if not exists orders_phone_idx on public.orders (phone);
 create table if not exists public.order_items (
@@ -373,8 +374,7 @@ v_address text := nullif(btrim(coalesce(p_customer->>'address', '')), '');
 v_note text := nullif(btrim(coalesce(p_customer->>'note', '')), '');
 v_count int;
 v_subtotal int;
-v_size text;
-v_fee int;
+v_estimate int;
 begin
 perform public.release_expired_holds();
 select * into s from public.settings where id = 1;
@@ -435,16 +435,15 @@ end if;
 perform public._reserve_order(v_order.id);
 select coalesce(sum(qty), 0), coalesce(sum(price * qty), 0) into v_count, v_subtotal
 from public.order_items where order_id = v_order.id;
-v_size := public.parcel_size(v_count);
-v_fee := case
-when v_method = 'courier' then
-(case v_size when 'small' then v_town.fee_small when 'medium' then v_town.fee_medium else v_town.fee_large end)
-+ s.packaging_fee
-else 0
-end;
+if v_method = 'courier' then
+select min(f) into v_estimate
+from (values (v_town.fee_small), (v_town.fee_medium), (v_town.fee_large)) x(f);
+v_estimate := v_estimate + s.packaging_fee;
+end if;
 update public.orders
-set item_count = v_count, subtotal = v_subtotal, parcel_size = v_size,
-delivery_fee = v_fee, total = v_subtotal + coalesce(v_fee, 0)
+set item_count = v_count, subtotal = v_subtotal, parcel_size = null,
+delivery_fee = case when v_method = 'courier' then null else 0 end,
+delivery_estimate = v_estimate, total = v_subtotal
 where id = v_order.id
 returning * into v_order;
 return jsonb_build_object(
@@ -462,6 +461,7 @@ return jsonb_build_object(
 'item_count', v_order.item_count,
 'subtotal', v_order.subtotal,
 'delivery_fee', v_order.delivery_fee,
+'delivery_estimate', v_order.delivery_estimate,
 'total', v_order.total,
 'hold_until', v_order.hold_until,
 'items', (
@@ -482,6 +482,7 @@ select jsonb_build_object(
 'item_count', o.item_count,
 'subtotal', o.subtotal,
 'delivery_fee', o.delivery_fee,
+'delivery_estimate', o.delivery_estimate,
 'total', o.total,
 'items', (
 select jsonb_agg(jsonb_build_object('code', toy_code, 'name', name, 'condition', condition,
@@ -584,6 +585,33 @@ update public.orders set status = 'cancelled', hold_until = null where id = o.id
 else
 raise exception 'Unknown status %.', p_status using errcode = 'P0001';
 end case;
+return o;
+end;
+$$;
+create or replace function public.set_delivery_fee(p_order uuid, p_fee int, p_size text default null)
+returns public.orders
+language plpgsql security definer set search_path = public as $$
+declare o public.orders;
+begin
+perform public._require_role('sales');
+if p_fee is null or p_fee < 0 or p_fee > 100000 then
+raise exception 'Type the delivery fee in kwacha.' using errcode = 'P0001';
+end if;
+if p_size is not null and p_size not in ('small', 'medium', 'large') then
+raise exception 'Pick small, medium or large.' using errcode = 'P0001';
+end if;
+select * into o from public.orders where id = p_order for update;
+if not found then
+raise exception 'Order not found.' using errcode = 'P0001';
+end if;
+if o.status in ('cancelled', 'expired') then
+raise exception 'This order is closed. Reopen it first.' using errcode = 'P0001';
+end if;
+update public.orders
+set delivery_fee = p_fee, parcel_size = coalesce(p_size, parcel_size), total = subtotal + p_fee
+where id = o.id returning * into o;
+perform public._log('delivery_fee', o.code || ' delivery fee K' || p_fee
+|| coalesce(' (' || p_size || ' parcel)', ''), null, o.id);
 return o;
 end;
 $$;
@@ -845,7 +873,7 @@ where code = upper(btrim(coalesce(p->>'order_code', ''))) and created_at > now()
 if not found or exists (select 1 from public.visits where kind = 'order' and order_code = v_order.code) then
 return;
 end if;
-v_amount := v_order.total;
+v_amount := v_order.subtotal;
 end if;
 insert into public.visits (kind, visitor, session, source, via, campaign, referrer, device, toy_code, order_code, amount)
 values (v_kind, v_visitor, v_session,
@@ -858,6 +886,9 @@ delete from public.visits where at < now() - interval '400 days';
 end if;
 end;
 $$;
+update public.visits v set amount = o.subtotal
+from public.orders o
+where v.kind = 'order' and v.order_code = o.code and v.amount is distinct from o.subtotal;
 create or replace function public.traffic_report(p_days int default 7) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -1012,6 +1043,8 @@ revoke execute on function public.toy_sold_out(uuid) from public, anon;
 revoke execute on function public.toy_relist(uuid, int, int) from public, anon;
 grant execute on function public.toy_sold_out(uuid) to authenticated;
 grant execute on function public.toy_relist(uuid, int, int) to authenticated;
+revoke execute on function public.set_delivery_fee(uuid, int, text) from public, anon;
+grant execute on function public.set_delivery_fee(uuid, int, text) to authenticated;
 grant execute on function public.place_order(jsonb, jsonb) to anon, authenticated;
 grant execute on function public.get_order_public(text, text) to anon, authenticated;
 grant execute on function public.release_expired_holds() to anon, authenticated;

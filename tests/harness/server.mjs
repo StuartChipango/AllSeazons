@@ -29,6 +29,7 @@ const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.woff2': 'font/woff2', '.json': 'application/json', '.webmanifest': 'application/manifest+json',
+  '.gz': 'application/gzip', '.wasm': 'application/wasm', '.pdf': 'application/pdf',
 };
 
 export async function resetDatabase({ seed = true } = {}) {
@@ -42,6 +43,7 @@ export async function resetDatabase({ seed = true } = {}) {
   await db.connect();
   await db.query(readFileSync(join(ROOT, 'tests/fixtures/supabase-stub.sql'), 'utf8'));
   await db.query(readFileSync(join(ROOT, 'supabase/schema.sql'), 'utf8'));
+  await db.query(readFileSync(join(ROOT, 'supabase/books.sql'), 'utf8'));
   await db.query(`alter role authenticator with login password 'authenticator'`);
   if (seed) {
     await db.query(`insert into staff (email, name, roles) values ($1, 'Owner', '{owner}')`, [STAFF.email]);

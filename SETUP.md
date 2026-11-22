@@ -57,7 +57,7 @@ Sign in at the staff app and open **Settings**:
 
 - **WhatsApp Business number**: orders are sent here.
 - **Price tiers**: K50, K75, K100… whatever you use.
-- **Towns**: the out-of-town list with each courier and its small, medium and large fee. A blank fee shows "fee confirmed on WhatsApp".
+- **Towns**: the out-of-town list with each courier and its small, medium and large fee. At checkout the customer only sees a suggestion (the lowest fee plus packaging); whoever confirms the order picks the parcel size on the order card, which sets the real fee. A town with no fees shows "fee confirmed on WhatsApp". Delivery fees are passed on to the courier and never count as sales, in the Books or anywhere else.
 - **Notes** for pickup, Yango and courier, and the banner at the top of the shop.
 - **Staff**: add other staff here after creating their login (step 1.3).
 
@@ -74,6 +74,25 @@ Free, built in, no extra account. After running the latest `schema-paste.sql`, t
 - Phones that sign in to the staff app are not counted, so your own checking does not show up. Change this under "What do these mean?" on that page.
 - No names or numbers are stored. Rows older than 400 days are removed automatically.
 
+## 7. Sale alerts: "Cha-ching!" on the staff phone
+
+Every time a customer orders on the website, the staff phone shows **Cha-ching! New order K350** with the order code, name, toys and delivery, even when the app is closed. Tap it to open Inbox. Free: no paid service, no extra account. Orders that staff type in themselves (WhatsApp orders, shop sales) do not ring.
+
+**Once, on a computer (about 5 minutes):**
+
+1. **Database.** Supabase → **SQL Editor** → New query → paste all of `supabase/sale-alerts.sql` → **Run**. (Safe to run again.)
+2. **The sender.** Supabase → **Edge Functions** → **Deploy a new function** → **Via Editor**. Name it exactly `sale-alert`. Delete the sample code, paste all of `supabase/functions/sale-alert/index.ts`, and **Deploy**. Then open the function's **Details** (or Settings) and turn **OFF** "Verify JWT" / "Enforce JWT verification", and save. No secrets are needed.
+   (With the Supabase command line instead: `supabase functions deploy sale-alert --no-verify-jwt`.)
+
+**On each staff phone (Android, Chrome):**
+
+3. Install the staff app if you have not: open `https://allseazons.shop/staff/` in Chrome → menu ⋮ → **Add to Home screen** (or **Install app**).
+4. Open the app → **Me** → **Sale alerts** → **Turn on sale alerts** → **Allow**. Then **Send a test**: a "Cha-ching! This is a test" notification should appear.
+
+**Change the alert sound (optional).** With the app open you hear the cha-ching. With it closed, Android plays the phone's normal notification sound. To make that a cha-ching too: download `https://allseazons.shop/assets/sounds/cha-ching.wav` on the phone, then long-press a sale alert → **Settings** (or phone Settings → Apps → AS Staff / Chrome → Notifications) → the alert's category → **Sound** → pick the downloaded file. Some phones only list sounds in the Ringtones or Notifications folder; move it there with the Files app if needed.
+
+**If an alert does not come:** make sure the phone is not in battery saver for Chrome (Settings → Apps → Chrome → Battery → Unrestricted), and that Do Not Disturb is off. In Supabase → Edge Functions → sale-alert → **Logs** you can see each alert being sent.
+
 ## Daily use
 
 1. Take photos on your phone.
@@ -83,3 +102,12 @@ Free, built in, no extra account. After running the latest `schema-paste.sql`, t
 5. Walk-in sale: **Stock**, tick the toys, **Sell in shop**.
 
 Tip: on your phone, open the staff app and choose **Add to Home Screen** so it opens like an app.
+
+## Books (bookkeeping)
+
+One-time step: in Supabase, open **SQL Editor**, paste all of `supabase/books.sql` and press **Run**. It only adds the Books tables, the private `receipts` photo storage and the report; nothing in the shop changes. Safe to run again.
+
+- Directors (staff with the Owner job) see the Books (Home tile, or Books in the side menu).
+- Anyone on staff can hand in a receipt from the + button ("Receipt or expense"); it waits under "To check" for a director.
+- Receipts are read on the phone (`assets/vendor/tesseract`, about 7 MB the first time, then kept by the phone). No AI account needed.
+- Boxes from the Boxes page count as stock bought in the month they were bought. Link a stock receipt to its box so it is not counted twice.

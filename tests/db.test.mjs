@@ -52,6 +52,7 @@ before(async () => {
   await db.connect();
   await db.query(readFileSync(new URL('./fixtures/supabase-stub.sql', import.meta.url), 'utf8'));
   await db.query(readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8'));
+  await db.query(readFileSync(new URL('../supabase/books.sql', import.meta.url), 'utf8'));
   await db.query(`insert into staff(email, roles) values ('owner@allseazons.test', '{owner}')`);
   await db.query(`update towns set courier='Mazhandu', fee_small=60, fee_medium=90, fee_large=150 where name='Kitwe'`);
 });
@@ -93,7 +94,8 @@ test('checkout holds the toys and returns the order summary', async () => {
   assert.equal(r.subtotal, 160);
   assert.equal(r.total, 160);
   assert.equal(r.item_count, 2);
-  assert.equal(r.parcel_size, 'medium');
+  assert.equal(r.parcel_size, null, 'staff decide the parcel size');
+  assert.equal(r.delivery_fee, 0);
   assert.equal(r.phone, '0977123456');
   assert.deepEqual(r.items.map((i) => i.name), ['Barbie Camper', 'Duplo Train']);
   assert.equal((await toy(a.id)).status, 'reserved');
@@ -115,27 +117,43 @@ test('an unavailable toy error names it and lists its id for the cart', async ()
   assert.equal((await toy(b.id)).status, 'available', 'the failed order must not hold other toys');
 });
 
-test('out-of-town orders pick the courier fee by parcel size', async () => {
+test('out-of-town orders show a suggested courier fee; staff set the real one', async () => {
   const kitwe = (await db.query(`select id from towns where name='Kitwe'`)).rows[0].id;
   const toys = [];
   for (let i = 0; i < 5; i++) toys.push(await addToy({ name: 'Bulk ' + i, price: 50 }));
   const c = { name: 'Mwila', phone: '0966000111', location: 'out_of_town', town_id: kitwe, address: 'Mazhandu Kitwe branch' };
   const one = await place([{ toy_id: toys[0].id }], c);
-  assert.equal(one.parcel_size, 'small');
-  // Courier K60 plus the K40 packaging fee.
-  assert.equal(one.delivery_fee, 100);
-  assert.equal(one.total, 150);
+  // Nobody knows the parcel size yet: the fee waits for staff.
+  assert.equal(one.parcel_size, null);
+  assert.equal(one.delivery_fee, null);
+  // Suggestion: the town's lowest courier fee (K60) plus K40 packaging.
+  assert.equal(one.delivery_estimate, 100);
+  assert.equal(one.total, 50, 'total is toys only until the fee is set');
   assert.equal(one.delivery_method, 'courier');
   assert.equal(one.town, 'Kitwe');
   assert.equal(one.courier, 'Mazhandu');
   const four = await place(toys.slice(1, 5).map((t) => ({ toy_id: t.id })), { ...c, phone: '0966000222' });
-  assert.equal(four.parcel_size, 'medium');
-  assert.equal(four.delivery_fee, 130);
+  assert.equal(four.delivery_estimate, 100, 'never the biggest fee just because there are more toys');
   const ndola = (await db.query(`select id from towns where name='Ndola'`)).rows[0].id;
   const t = await addToy();
   const unpriced = await place([{ toy_id: t.id }], { ...c, town_id: ndola, phone: '0966000333' });
-  assert.equal(unpriced.delivery_fee, null, 'a town without fees is confirmed on WhatsApp');
+  assert.equal(unpriced.delivery_fee, null);
+  assert.equal(unpriced.delivery_estimate, null, 'a town without fees is confirmed on WhatsApp');
   assert.equal(unpriced.total, 50);
+
+  // Staff pick the parcel size and fee when they confirm.
+  const o = await order(four.code);
+  await assert.rejects(anon(() => db.query('select set_delivery_fee($1, 190, $2)', [o.id, 'large'])));
+  await assert.rejects(staff(() => db.query('select set_delivery_fee($1, -5)', [o.id])), /delivery fee/);
+  await assert.rejects(staff(() => db.query('select set_delivery_fee($1, 100, $2)', [o.id, 'huge'])), /small, medium or large/);
+  const set = (await staff(() => db.query('select (set_delivery_fee($1, 130, $2)).*', [o.id, 'medium']))).rows[0];
+  assert.equal(set.delivery_fee, 130);
+  assert.equal(set.parcel_size, 'medium');
+  assert.equal(set.subtotal, 200);
+  assert.equal(set.total, 330, 'customer pays toys + delivery');
+  // Changing it again is fine (e.g. it packed bigger than expected).
+  const again = (await staff(() => db.query('select (set_delivery_fee($1, 190, $2)).*', [o.id, 'large']))).rows[0];
+  assert.equal(again.total, 390);
 });
 
 test('checkout validates the customer details', async () => {
@@ -359,8 +377,83 @@ test('website traffic: the shop records visits, only the owner reads the report'
   assert.equal((await call(staff, 'select traffic_report(1) r')).r.days.length, 1);
 });
 
+test('books: owners only, staff hand in receipts, report adds up each month', async () => {
+  const year = Number((await db.query(`select extract(year from now() at time zone 'Africa/Lusaka')::int y`)).rows[0].y);
+  const month = Number((await db.query(`select extract(month from now() at time zone 'Africa/Lusaka')::int m`)).rows[0].m);
+  const toyA = await addToy({ name: 'Books toy', price: 80 });
+  const r = await place([{ id: toyA.id, qty: 1 }]);
+  const o = await order(r.code);
+  await staff(() => db.query('select set_order_status($1,$2)', [o.id, 'paid']));
+  const before = (await call(staff, `select books_report(${year}) r`)).r.months[month - 1];
+
+  // A courier order: the K150 delivery fee is passed on, so sales and tax ignore it.
+  const kitwe = (await db.query(`select id from towns where name='Kitwe'`)).rows[0].id;
+  const toyB = await addToy({ name: 'Courier toy', price: 120 });
+  const rc = await place([{ toy_id: toyB.id }], { name: 'Chanda', phone: freshPhone(), location: 'out_of_town', town_id: kitwe });
+  const oc = await order(rc.code);
+  await staff(() => db.query('select set_delivery_fee($1, 150, $2)', [oc.id, 'large']));
+  await staff(() => db.query('select set_order_status($1,$2)', [oc.id, 'paid']));
+  const withCourier = (await call(staff, `select books_report(${year}) r`)).r.months[month - 1];
+  assert.equal(withCourier.sales - before.sales, 120);
+  assert.equal(withCourier.delivery - before.delivery, 150);
+  assert.equal(withCourier.turnover - before.turnover, 120);
+
+  // Staff without the owner job: can hand in a receipt, cannot read the books.
+  await call(staff, `select staff_add('Bwalya', 'sales7', 'secret1', '{sales}')`);
+  const clerk = asEmail('sales7@staff.allseazons.shop');
+  await clerk(() => db.query(`insert into book_entries (category, amount, supplier, status) values ('packaging', 35, 'Shoprite', 'ok')`));
+  assert.equal(await clerk(async () => (await db.query('select * from book_entries')).rowCount), 0);
+  await assert.rejects(call(clerk, `select books_report(${year})`), /Only the owner/);
+  await assert.rejects(call(anon, `select books_report(${year})`), /permission denied/);
+  await assert.rejects(stranger(() => db.query(`insert into book_entries (amount) values (1)`)));
+  const handed = (await db.query(`select * from book_entries where supplier='Shoprite'`)).rows[0];
+  assert.equal(handed.status, 'check');
+  assert.equal(handed.added_by, 'sales7@staff.allseazons.shop');
+
+  // Owner entries, a backdated one, a box with and without a book entry.
+  const today = (await db.query(`select (now() at time zone 'Africa/Lusaka')::date d`)).rows[0].d;
+  await staff(() => db.query(`insert into boxes (id, purchased_on, cost, delivery, expected_count) values ('BX-BOOKS', $1, 900, 100, 40)`, [today]));
+  await staff(() => db.query(`insert into boxes (id, purchased_on, cost) values ('BX-LINKED', $1, 5000)`, [today]));
+  await staff(() => db.query(`insert into book_entries (category, amount, items, box_id) values ('stock', 1500, 30, 'BX-LINKED')`));
+  await staff(() => db.query(`insert into book_entries (category, amount) values ('rent', 2000), ('setup', 700)`));
+  await staff(() => db.query(`insert into book_entries (kind, category, amount) values ('income', 'sales', 300)`));
+  await staff(() => db.query(`insert into book_entries (category, amount, spent_on) values ('transport', 50, make_date($1, 1, 15))`, [year - 1]));
+
+  const rep = (await call(staff, `select books_report(${year}) r`)).r;
+  assert.equal(rep.months.length, 12);
+  assert.equal(Number(rep.rate), 5);
+  const m = rep.months[month - 1];
+  assert.equal(m.sales - withCourier.sales, 0, 'sale counted before');
+  assert.ok(m.sales >= 80);
+  assert.equal(m.stock - before.stock, 1000 + 1500, 'unlinked box + stock entry, linked box not twice');
+  assert.equal(m.stock_items - before.stock_items, 70);
+  assert.equal(m.expenses - before.expenses, 2035);
+  assert.equal(m.setup - before.setup, 700);
+  assert.equal(m.income - before.income, 300);
+  assert.equal(m.to_check - before.to_check, 1);
+  assert.equal(Number(m.turnover), Number(m.sales) + Number(m.income), 'delivery fees are passed on, not money in');
+  assert.equal(Number(m.tax_due), Math.round(Number(m.turnover) * 5) / 100);
+  assert.equal(Number(m.by_category.rent), 2000);
+  const last = (await call(staff, `select books_report(${year - 1}) r`)).r.months[0];
+  assert.equal(Number(last.expenses), 50);
+
+  // Months: tax paid and closed.
+  await staff(() => db.query(`insert into book_months (month, closed, tax_paid) values (make_date($1, $2, 1), true, 123.5)`, [year, month]));
+  const m2 = (await call(staff, `select books_report(${year}) r`)).r.months[month - 1];
+  assert.equal(m2.closed, true);
+  assert.equal(Number(m2.tax_paid), 123.5);
+  await assert.rejects(staff(() => db.query(`insert into book_months (month) values ('2026-01-15')`)));
+
+  // Receipt photos are private to owners.
+  await clerk(() => db.query(`insert into storage.objects (bucket_id, name) values ('receipts', 'r1.jpg')`));
+  assert.equal(await clerk(async () => (await db.query(`select * from storage.objects where bucket_id='receipts'`)).rowCount), 0);
+  assert.equal(await staff(async () => (await db.query(`select * from storage.objects where bucket_id='receipts'`)).rowCount), 1);
+  assert.equal(await anon(async () => (await db.query(`select * from storage.objects where bucket_id='receipts'`)).rowCount), 0);
+});
+
 test('running the database file again keeps staff and their jobs', async () => {
   await db.query(readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8'));
+  await db.query(readFileSync(new URL('../supabase/books.sql', import.meta.url), 'utf8'));
   const r = (await db.query(`select roles from staff where email='owner@allseazons.test'`)).rows[0];
   assert.deepEqual(r.roles, ['owner']);
 });
@@ -392,4 +485,15 @@ test('in the shop, staff mark a toy sold out and relist it as new stock', async 
   // The website can read restocked_at for the tag.
   const seen = await anon(async () => (await db.query('select restocked_at from toys where id=$1', [t.id])).rows[0]);
   assert.ok(seen.restocked_at);
+});
+
+test('the delivery fees paste file runs again and takes courier fees out of past website sales', async () => {
+  const t = await addToy({ price: 70 });
+  const o = await place([{ toy_id: t.id }]);
+  // An old order tracked with the courier fee in it.
+  await db.query(`insert into visits (kind, visitor, session, order_code, amount) values ('order', 'old', 'old', $1, 170)`, [o.code]);
+  await db.query(readFileSync(new URL('../supabase/delivery-fees.sql', import.meta.url), 'utf8'));
+  await db.query(readFileSync(new URL('../supabase/delivery-fees.sql', import.meta.url), 'utf8'));
+  const v = (await db.query(`select amount from visits where order_code = $1`, [o.code])).rows[0];
+  assert.equal(v.amount, 70);
 });

@@ -49,11 +49,14 @@ export async function show(main) {
   setTimeout(backfillThumbs, 1500);
   const since = weekStart();
   const sixty = new Date(Date.now() - 60 * 86400e3).toISOString();
+  const books = can('owner')
+    ? import('./books.js').then((b) => b.homeSummary()).catch(() => null)
+    : Promise.resolve(null);
   const visitorsToday = can('owner')
     ? supabase.rpc('traffic_report', { p_days: 1 }).then((r) => r.data?.totals ?? null, () => null)
     : Promise.resolve(null);
   const [week, open, toPack, live, review, soldItems, slow, fresh] = await Promise.all([
-    supabase.from('orders').select('total, channel').in('status', ['paid', 'packed', 'sent', 'delivered']).gte('paid_at', since),
+    supabase.from('orders').select('subtotal, channel').in('status', ['paid', 'packed', 'sent', 'delivered']).gte('paid_at', since),
     supabase.from('orders').select('id', { count: 'exact', head: true }).in('status', ['held', 'confirmed']),
     supabase.from('orders').select('id', { count: 'exact', head: true }).eq('status', 'paid'),
     supabase.from('toys').select('id', { count: 'exact', head: true }).eq('status', 'available'),
@@ -67,7 +70,9 @@ export async function show(main) {
   ]);
 
   const visits = await visitorsToday;
-  const sales = (week.data || []).reduce((s, o) => s + o.total, 0);
+  const bk = await books;
+  // Toys only: delivery and packaging money goes to the courier, not to us.
+  const sales = (week.data || []).reduce((s, o) => s + o.subtotal, 0);
   const goal = shared.settings?.weekly_goal || 0;
   const items = soldItems.data || [];
   const byCategory = countBy(items, (x) => x.toys?.category || 'Not set').slice(0, 8);
@@ -88,6 +93,7 @@ export async function show(main) {
       <img class="mascot" src="../assets/img/mascots/sammy.webp" alt="" width="104" height="127" loading="lazy" decoding="async">
     </section>
     <h1 class="sr-only">Home</h1>
+    ${bk?.reminder ? `<a class="bk-remind ${bk.reminder.urgent ? 'urgent' : ''}" href="#books?m=${esc(bk.reminder.month)}"><b>${esc(bk.reminder.text)}</b><span>Open the Books ›</span></a>` : ''}
     <nav class="stories" aria-label="Jobs waiting">
       ${story('#review', review.count, 'Review', 'stock')}
       ${story('#orders', open.count, 'To confirm', 'sales')}
@@ -98,6 +104,7 @@ export async function show(main) {
       <div class="kpi"><div class="l">Sales this week</div><div class="n">${kwacha(sales)}</div>
         ${goal ? `<div class="progress" title="Goal ${kwacha(goal)}"><span style="width:${Math.min(100, (sales / goal) * 100)}%"></span></div><div class="l">${Math.round((sales / goal) * 100)}% of ${kwacha(goal)} goal</div>` : ''}</div>
       <a class="kpi" href="#stock"><div class="l">Toys in the shop</div><div class="n">${live.count ?? 0}</div></a>
+      ${bk ? `<a class="kpi" href="#books"><div class="l">Books this month</div><div class="n">${bk.profit < 0 ? '−' : ''}${kwacha(Math.abs(bk.profit))}</div><div class="l">profit so far · ${kwacha(bk.month.turnover) || 'K0'} in, ${kwacha(Number(bk.month.stock) + Number(bk.month.expenses) + Number(bk.month.setup)) || 'K0'} out ›</div></a>` : ''}
       ${can('owner') ? `<a class="kpi" href="#traffic"><div class="l">Website visitors today</div><div class="n">${visits ? visits.visitors : '–'}</div><div class="l">${visits ? `${visits.whatsapp} WhatsApp taps · see where from ›` : 'See where they come from ›'}</div></a>` : ''}
     </div>
     ${(fresh.data || []).length ? `<h2 style="font-size:20px;margin:4px 0 8px">Just added</h2>
@@ -118,5 +125,5 @@ export async function show(main) {
           ${esc(t.name)}<br><strong>${kwacha(t.price)}</strong></a>`).join('') || '<p class="sub">None. Stock is moving well.</p>'}</div>
     </section>
     </details>
-    <div class="mobile-more">${can('stock') ? '<a class="btn ghost" href="#boxes">Boxes</a>' : ''}<a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
+    <div class="mobile-more">${can('owner') ? '<a class="btn ghost" href="#books">Books</a>' : ''}${can('stock') ? '<a class="btn ghost" href="#boxes">Boxes</a>' : ''}<a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
 }
