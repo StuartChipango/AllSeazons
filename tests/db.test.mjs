@@ -52,6 +52,7 @@ before(async () => {
   await db.connect();
   await db.query(readFileSync(new URL('./fixtures/supabase-stub.sql', import.meta.url), 'utf8'));
   await db.query(readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8'));
+  await db.query(readFileSync(new URL('../supabase/books.sql', import.meta.url), 'utf8'));
   await db.query(`insert into staff(email, roles) values ('owner@allseazons.test', '{owner}')`);
   await db.query(`update towns set courier='Mazhandu', fee_small=60, fee_medium=90, fee_large=150 where name='Kitwe'`);
 });
@@ -359,8 +360,71 @@ test('website traffic: the shop records visits, only the owner reads the report'
   assert.equal((await call(staff, 'select traffic_report(1) r')).r.days.length, 1);
 });
 
+test('books: owners only, staff hand in receipts, report adds up each month', async () => {
+  const year = Number((await db.query(`select extract(year from now() at time zone 'Africa/Lusaka')::int y`)).rows[0].y);
+  const month = Number((await db.query(`select extract(month from now() at time zone 'Africa/Lusaka')::int m`)).rows[0].m);
+  const toyA = await addToy({ name: 'Books toy', price: 80 });
+  const r = await place([{ id: toyA.id, qty: 1 }]);
+  const o = await order(r.code);
+  await staff(() => db.query('select set_order_status($1,$2)', [o.id, 'paid']));
+  const before = (await call(staff, `select books_report(${year}) r`)).r.months[month - 1];
+
+  // Staff without the owner job: can hand in a receipt, cannot read the books.
+  await call(staff, `select staff_add('Bwalya', 'sales7', 'secret1', '{sales}')`);
+  const clerk = asEmail('sales7@staff.allseazons.shop');
+  await clerk(() => db.query(`insert into book_entries (category, amount, supplier, status) values ('packaging', 35, 'Shoprite', 'ok')`));
+  assert.equal(await clerk(async () => (await db.query('select * from book_entries')).rowCount), 0);
+  await assert.rejects(call(clerk, `select books_report(${year})`), /Only the owner/);
+  await assert.rejects(call(anon, `select books_report(${year})`), /permission denied/);
+  await assert.rejects(stranger(() => db.query(`insert into book_entries (amount) values (1)`)));
+  const handed = (await db.query(`select * from book_entries where supplier='Shoprite'`)).rows[0];
+  assert.equal(handed.status, 'check');
+  assert.equal(handed.added_by, 'sales7@staff.allseazons.shop');
+
+  // Owner entries, a backdated one, a box with and without a book entry.
+  const today = (await db.query(`select (now() at time zone 'Africa/Lusaka')::date d`)).rows[0].d;
+  await staff(() => db.query(`insert into boxes (id, purchased_on, cost, delivery, expected_count) values ('BX-BOOKS', $1, 900, 100, 40)`, [today]));
+  await staff(() => db.query(`insert into boxes (id, purchased_on, cost) values ('BX-LINKED', $1, 5000)`, [today]));
+  await staff(() => db.query(`insert into book_entries (category, amount, items, box_id) values ('stock', 1500, 30, 'BX-LINKED')`));
+  await staff(() => db.query(`insert into book_entries (category, amount) values ('rent', 2000), ('setup', 700)`));
+  await staff(() => db.query(`insert into book_entries (kind, category, amount) values ('income', 'sales', 300)`));
+  await staff(() => db.query(`insert into book_entries (category, amount, spent_on) values ('transport', 50, make_date($1, 1, 15))`, [year - 1]));
+
+  const rep = (await call(staff, `select books_report(${year}) r`)).r;
+  assert.equal(rep.months.length, 12);
+  assert.equal(Number(rep.rate), 5);
+  const m = rep.months[month - 1];
+  assert.equal(m.sales - before.sales, 0, 'sale counted before');
+  assert.ok(m.sales >= 80);
+  assert.equal(m.stock - before.stock, 1000 + 1500, 'unlinked box + stock entry, linked box not twice');
+  assert.equal(m.stock_items - before.stock_items, 70);
+  assert.equal(m.expenses - before.expenses, 2035);
+  assert.equal(m.setup - before.setup, 700);
+  assert.equal(m.income - before.income, 300);
+  assert.equal(m.to_check - before.to_check, 1);
+  assert.equal(Number(m.turnover), Number(m.sales) + Number(m.delivery) + Number(m.income));
+  assert.equal(Number(m.tax_due), Math.round(Number(m.turnover) * 5) / 100);
+  assert.equal(Number(m.by_category.rent), 2000);
+  const last = (await call(staff, `select books_report(${year - 1}) r`)).r.months[0];
+  assert.equal(Number(last.expenses), 50);
+
+  // Months: tax paid and closed.
+  await staff(() => db.query(`insert into book_months (month, closed, tax_paid) values (make_date($1, $2, 1), true, 123.5)`, [year, month]));
+  const m2 = (await call(staff, `select books_report(${year}) r`)).r.months[month - 1];
+  assert.equal(m2.closed, true);
+  assert.equal(Number(m2.tax_paid), 123.5);
+  await assert.rejects(staff(() => db.query(`insert into book_months (month) values ('2026-01-15')`)));
+
+  // Receipt photos are private to owners.
+  await clerk(() => db.query(`insert into storage.objects (bucket_id, name) values ('receipts', 'r1.jpg')`));
+  assert.equal(await clerk(async () => (await db.query(`select * from storage.objects where bucket_id='receipts'`)).rowCount), 0);
+  assert.equal(await staff(async () => (await db.query(`select * from storage.objects where bucket_id='receipts'`)).rowCount), 1);
+  assert.equal(await anon(async () => (await db.query(`select * from storage.objects where bucket_id='receipts'`)).rowCount), 0);
+});
+
 test('running the database file again keeps staff and their jobs', async () => {
   await db.query(readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8'));
+  await db.query(readFileSync(new URL('../supabase/books.sql', import.meta.url), 'utf8'));
   const r = (await db.query(`select roles from staff where email='owner@allseazons.test'`)).rows[0];
   assert.deepEqual(r.roles, ['owner']);
 });
