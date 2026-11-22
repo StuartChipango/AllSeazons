@@ -2,6 +2,7 @@ import { esc, kwacha, METHOD_LABEL, CONDITIONS, waLink, timeLabel } from '../lib
 import { supabase, imageUrl, friendlyError } from '../db.js';
 import { refreshBadges, can, shared } from './app.js';
 import { $, $$, toast, confirmBox, ago, dateLabel, busy } from './ui.js';
+import { wireSearchBox } from '../search.js';
 
 const TABS = [
   { key: 'open', label: 'To confirm', statuses: ['held', 'confirmed'] },
@@ -203,8 +204,8 @@ function wire() {
     tab = GROUPS[view][0];
     load();
   });
-  let t;
-  $('#oq', root).oninput = (e) => { clearTimeout(t); t = setTimeout(async () => { q = e.target.value.trim(); await load(); const i = $('#oq', root); i?.focus(); i?.setSelectionRange(i.value.length, i.value.length); }, 350); };
+  // Search runs on Search / Enter or when the box is left, never while typing.
+  wireSearchBox($('#oq', root), (text) => { q = text; load(); });
   $$('[data-pick]', root).forEach((c) => c.onchange = () => {
     if (c.checked) picked.add(c.dataset.pick); else picked.delete(c.dataset.pick);
     render();

@@ -9,6 +9,7 @@
 //   settings: { whatsapp_number }    the shop settings
 // }
 import { esc, kwacha, effectivePrice } from '../lib.js';
+import { searchToys, wireSearchBox } from '../search.js';
 import { loadBitmap, canvasBlob } from '../frame.js';
 import { makeZip } from '../unzip.js';
 import { toast, openPanel, closePanel, busy } from '../staff/ui.js';
@@ -324,7 +325,7 @@ async function pickFromStock(max, done) {
   }
   const chosen = new Set();
   const draw = (q = '') => {
-    const list = stockCache.filter((t) => !q || `${t.name} ${t.code || ''} ${t.category || ''}`.toLowerCase().includes(q)).slice(0, 120);
+    const list = searchToys(stockCache, q).toys.slice(0, 120);
     body.querySelector('.hint')?.remove();
     body.querySelector('.pick-grid')?.remove();
     body.querySelector('.st-pick-go')?.remove();
@@ -338,7 +339,7 @@ async function pickFromStock(max, done) {
       if (chosen.has(id)) chosen.delete(id);
       else if (chosen.size < max) chosen.add(id);
       else return toast(max === 1 ? 'One toy here.' : `Up to ${max} toys here.`);
-      draw(body.querySelector('.st-search').value.trim().toLowerCase());
+      draw(shownFor);
     }));
     body.querySelector('[data-go]').addEventListener('click', () => {
       const picked = stockCache.filter((t) => chosen.has(t.id)).map((t) => ({ src: `toy:${t.id}`, thumb: t.thumb, name: t.name, price: t.price, raw: t }));
@@ -346,7 +347,9 @@ async function pickFromStock(max, done) {
       done(picked);
     });
   };
-  body.querySelector('.st-search').addEventListener('input', (e) => draw(e.target.value.trim().toLowerCase()));
+  // Search on Search / Enter or when the box is left, never while typing.
+  let shownFor = '';
+  wireSearchBox(body.querySelector('.st-search'), (text) => { shownFor = text; draw(text); });
   draw();
 }
 

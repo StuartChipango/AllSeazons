@@ -7,6 +7,7 @@ import { openAdjust } from './adjust.js';
 import { prefs } from './prefs.js';
 import { makeZip } from '../unzip.js';
 import { mediaHtml, wireMedia } from './media.js';
+import { scoreToy, searchToys, wireSearchBox } from '../search.js';
 
 const STATUS_LABEL = {
   available: 'In shop', review: 'Needs review', reserved: 'On hold', sold: 'Sold', damaged: 'Damaged', hidden: 'Hidden',
@@ -42,31 +43,31 @@ function matches(t) {
   if (f.condition && t.condition !== f.condition) return false;
   if (f.category && t.category !== f.category) return false;
   if (f.box && t.box_id !== f.box) return false;
-  if (f.q) {
-    const hay = `${t.name} ${t.code} ${t.brand || ''} ${t.legacy_id || ''} ${t.category || ''}`.toLowerCase();
-    if (!f.q.toLowerCase().split(/\s+/).every((w) => hay.includes(w))) return false;
-  }
   return true;
 }
 
+// The toys the filters and search pick, best search matches first.
+// Search forgives spelling slips and finds related words (search.js).
+function listed() {
+  const list = toys.filter(matches);
+  return filter.q ? searchToys(list, filter.q) : { toys: list, close: false };
+}
+
+// The top of the page (buttons, search box, filters) is drawn once; only the
+// list below it is redrawn, so the search box is never rebuilt while in use.
 function render() {
   if (!root) return;
-  const list = toys.filter(matches);
-  const value = list.filter((t) => ['available', 'reserved'].includes(t.status)).reduce((s, t) => s + effectivePrice(t) * t.quantity, 0);
-  root.innerHTML = `
+  if (!root.querySelector('#invBody')) {
+    root.innerHTML = `
     <div class="page-head">
       <h1>Stock</h1>
       <button class="btn small" id="socialPack" title="The framed pictures and captions of the toys listed below, for Facebook and the other pages">Social media pack</button>
       <button class="btn ghost small" id="exportCsv">Export CSV</button>
       <label class="btn ghost small">Import CSV<input type="file" accept=".csv,text/csv" id="importCsv" hidden></label>
     </div>
-    <nav class="stories" aria-label="Stock jobs">
-      <a class="story" href="#upload"><div class="ring"><div class="in">📷</div></div>Snap</a>
-      <a class="story ${toys.some((t) => t.status === 'review') ? '' : 'quiet'}" href="#review"><div class="ring"><div class="in">${toys.filter((t) => t.status === 'review').length}</div></div>Review</a>
-      <a class="story quiet" href="#boxes"><div class="ring"><div class="in">📦</div></div>Boxes</a>
-    </nav>
+    <nav class="stories" aria-label="Stock jobs" id="invStories"></nav>
     <div class="toolbar">
-      <input type="search" id="q" placeholder="Search name, code, brand" value="${esc(filter.q)}">
+      <input type="search" id="q" placeholder="Search toys: teddy, car, AS-0012…" value="${esc(filter.q)}" autocomplete="off" autocapitalize="off" spellcheck="false">
       <select id="fStatus">
         <option value="instock" ${filter.status === 'instock' ? 'selected' : ''}>In shop and on hold</option>
         <option value="" ${filter.status === '' ? 'selected' : ''}>Everything</option>
@@ -77,7 +78,20 @@ function render() {
       <select id="fCategory"><option value="">All types</option>${shared.categories.map((c) => `<option ${filter.category === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>
       <select id="fBox"><option value="">All boxes</option>${shared.boxes.map((b) => `<option ${filter.box === b.id ? 'selected' : ''}>${esc(b.id)}</option>`).join('')}</select>
     </div>
-    <p class="lead" style="margin:0 0 10px">${list.length} toy${list.length === 1 ? '' : 's'}${value ? ` · shop value ${kwacha(value)}` : ''}</p>
+    <div id="invBody"></div>
+    <div class="mobile-more"><a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
+    wireTop();
+  }
+  const found = listed();
+  const list = found.toys;
+  const value = list.filter((t) => ['available', 'reserved'].includes(t.status)).reduce((s, t) => s + effectivePrice(t) * t.quantity, 0);
+  $('#invStories', root).innerHTML = `
+      <a class="story" href="#upload"><div class="ring"><div class="in">📷</div></div>Snap</a>
+      <a class="story ${toys.some((t) => t.status === 'review') ? '' : 'quiet'}" href="#review"><div class="ring"><div class="in">${toys.filter((t) => t.status === 'review').length}</div></div>Review</a>
+      <a class="story quiet" href="#boxes"><div class="ring"><div class="in">📦</div></div>Boxes</a>
+`;
+  $('#invBody', root).innerHTML = `
+    <p class="lead" style="margin:0 0 10px">${found.close ? `No toy matches every word of “${esc(filter.q)}”. Closest: ` : ''}${list.length} toy${list.length === 1 ? '' : 's'}${value ? ` · shop value ${kwacha(value)}` : ''}</p>
     <div class="list">${list.slice(0, 400).map((t) => `
       <div class="item-row" data-id="${t.id}">
         <input type="checkbox" data-pick="${t.id}" ${selected.has(t.id) ? 'checked' : ''} aria-label="Select ${esc(t.name)}">
@@ -102,16 +116,22 @@ function render() {
         <button class="btn small" data-bulk="social">Social media pack</button>
         <button class="btn small" data-bulk="clear">Clear</button>
       </div>` : ''}
-    <div class="mobile-more"><a class="btn ghost" href="../" target="_blank">View shop</a></div>`;
+`;
   wire();
 }
 
-function wire() {
-  let qTimer;
-  $('#q', root).oninput = (e) => { clearTimeout(qTimer); qTimer = setTimeout(() => { filter.q = e.target.value.trim(); render(); $('#q', root)?.focus(); const q = $('#q', root); q?.setSelectionRange(q.value.length, q.value.length); }, 250); };
+function wireTop() {
+  // Search runs on Search / Enter or when the box is left, never while typing.
+  wireSearchBox($('#q', root), (text) => { filter.q = text; render(); });
   for (const [id, key] of [['#fStatus', 'status'], ['#fAudience', 'audience'], ['#fCondition', 'condition'], ['#fCategory', 'category'], ['#fBox', 'box']]) {
     $(id, root).onchange = (e) => { filter[key] = e.target.value; render(); };
   }
+  $('#exportCsv', root).onclick = exportCsv;
+  $('#socialPack', root).onclick = (e) => socialPack(listed().toys, e.currentTarget);
+  $('#importCsv', root).onchange = (e) => importCsv(e.target.files[0]);
+}
+
+function wire() {
   $$('.item-row', root).forEach((row) => row.addEventListener('click', (e) => {
     if (e.target.matches('input[type=checkbox]')) return;
     edit(toys.find((t) => t.id === row.dataset.id));
@@ -121,9 +141,6 @@ function wire() {
     render();
   });
   $$('[data-bulk]', root).forEach((b) => b.onclick = () => bulk(b.dataset.bulk, b));
-  $('#exportCsv', root).onclick = exportCsv;
-  $('#socialPack', root).onclick = (e) => socialPack(toys.filter(matches), e.currentTarget);
-  $('#importCsv', root).onchange = (e) => importCsv(e.target.files[0]);
 }
 
 async function bulk(action, button) {
@@ -334,7 +351,7 @@ function edit(t) {
 function exportCsv() {
   const cols = ['code', 'tagline', 'name', 'audience', 'condition', 'category', 'age_range', 'brand', 'price', 'sale_price', 'is_special',
     'quantity', 'status', 'box_id', 'sold_count', 'created_at', 'approved_at', 'sold_at', 'legacy_id', 'description'];
-  download(`all-seazons-stock-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(toys.filter(matches), cols));
+  download(`all-seazons-stock-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(listed().toys, cols));
 }
 
 async function importCsv(file) {
